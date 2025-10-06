@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>餐饮店数据管理与AI诊断系统</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <title>餐饮调查数据管理与诊断系统</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         .loading {
             display: none;
@@ -29,45 +30,132 @@
             100% { transform: rotate(360deg); }
         }
         .data-table {
-            font-size: 14px;
+            font-size: 13px;
         }
         .data-table th,
         .data-table td {
-            padding: 8px 12px;
+            padding: 10px 12px;
             border: 1px solid #e5e7eb;
+            white-space: nowrap;
         }
         .data-table th {
             background-color: #f9fafb;
             font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
         .data-table tr:nth-child(even) {
             background-color: #f9fafb;
+        }
+        .data-table tr:hover {
+            background-color: #f0f9ff;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal.active {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            max-width: 1000px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
         .health-table {
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
         }
         .health-table th, .health-table td {
-            border: 1px solid #ddd;
-            padding: 12px 8px;
+            padding: 12px;
             text-align: left;
+            border-bottom: 1px solid #e0e0e0;
         }
         .health-table th {
-            background-color: #3498db;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
+            font-weight: 600;
         }
         .status-healthy {
             background-color: #d4edda !important;
             color: #155724;
+            font-weight: 600;
         }
         .status-warning {
             background-color: #fff3cd !important;
             color: #856404;
+            font-weight: 600;
         }
         .status-danger {
             background-color: #f8d7da !important;
             color: #721c24;
+            font-weight: 600;
+        }
+        .diagnosis-section {
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .diagnosis-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+        }
+        .diagnosis-section h3::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin-right: 10px;
+        }
+        .info-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 12px 0;
+            border-left: 4px solid #667eea;
         }
         .action-plans {
             list-style: none;
@@ -75,515 +163,223 @@
         }
         .action-plans li {
             background: white;
-            margin: 10px 0;
+            margin: 12px 0;
             padding: 15px;
-            border-left: 4px solid #3498db;
-            border-radius: 4px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
         }
         .priority-high { border-left-color: #e74c3c; }
         .priority-medium { border-left-color: #f39c12; }
         .priority-low { border-left-color: #2ecc71; }
-        .tab-content {
-            display: none;
+        .store-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin: 15px 0;
         }
-        .tab-content.active {
+        .store-info-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        .store-info-item label {
+            font-size: 11px;
+            color: #7f8c8d;
             display: block;
+            margin-bottom: 4px;
         }
-        .radar-chart {
-            max-width: 400px;
+        .store-info-item value {
+            font-size: 15px;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .score-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .score-excellent { background: #d4edda; color: #155724; }
+        .score-good { background: #d1ecf1; color: #0c5460; }
+        .score-average { background: #fff3cd; color: #856404; }
+        .score-poor { background: #f8d7da; color: #721c24; }
+        .metric-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border-top: 3px solid #667eea;
+            margin: 10px 0;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        #reportExport {
+            background: white;
+            padding: 30px;
+            max-width: 800px;
             margin: 0 auto;
         }
-        .gradient-bg {
+        .report-header {
+            text-align: center;
+            padding: 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .card-hover {
-            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-        }
-        .card-hover:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        .metric-card {
-            background: linear-gradient(145deg, #ffffff, #f8fafc);
-            border: 1px solid rgba(0,0,0,0.05);
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            transition: all 0.3s ease;
-        }
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
-        }
-        .steps {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 30px;
-            position: relative;
-        }
-        .steps::before {
-            content: '';
-            position: absolute;
-            top: 15px;
-            left: 50px;
-            right: 50px;
-            height: 4px;
-            background-color: #e0e0e0;
-            z-index: 1;
-        }
-        .step {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background-color: #e0e0e0;
             color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            position: relative;
-            z-index: 2;
-        }
-        .step.active {
-            background-color: #3498db;
-        }
-        .step.completed {
-            background-color: #2ecc71;
-        }
-        .step-label {
-            position: absolute;
-            top: 40px;
-            left: 50%;
-            transform: translateX(-50%);
-            white-space: nowrap;
-            font-size: 14px;
-            color: #555;
-        }
-        .form-step {
-            display: none;
-        }
-        .form-step.active {
-            display: block;
-        }
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
             border-radius: 8px;
-            color: white;
-            font-weight: 500;
-            z-index: 1000;
-            transform: translateX(400px);
-            transition: transform 0.3s ease;
-        }
-        .notification.show {
-            transform: translateX(0);
-        }
-        .notification.success {
-            background-color: #10b981;
-        }
-        .notification.error {
-            background-color: #ef4444;
-        }
-        .notification.warning {
-            background-color: #f59e0b;
+            margin-bottom: 20px;
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
-    <!-- 通知组件 -->
-    <div id="notification" class="notification"></div>
-
+<body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8 max-w-7xl">
-        <!-- 导航标签 -->
-        <div class="bg-white rounded-2xl shadow-xl mb-8 overflow-hidden">
-            <div class="gradient-bg p-1">
-                <div class="flex bg-white rounded-xl">
-                    <button id="dataTab" class="tab-btn flex-1 py-4 px-6 text-center font-semibold text-blue-600 border-b-2 border-blue-600 bg-blue-50 rounded-l-xl transition-all duration-300">
-                        <i class="fas fa-database mr-2"></i>数据管理
-                    </button>
-                    <button id="diagnosisTab" class="tab-btn flex-1 py-4 px-6 text-center font-semibold text-gray-500 hover:text-blue-600 hover:bg-gray-50 rounded-r-xl transition-all duration-300">
-                        <i class="fas fa-stethoscope mr-2"></i>AI诊断
+        <!-- 标题和配置 -->
+        <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 mb-4">餐饮调查数据管理与诊断系统</h1>
+            
+            <!-- API 配置 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div>
+                    <label class="block text-gray-700 mb-2">API 地址</label>
+                    <input type="url" id="apiUrl" 
+                           class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           value="https://restaurant-survey-backend-postgres.onrender.com">
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2">管理员密钥</label>
+                    <input type="password" id="adminKey" 
+                           class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="请输入ADMIN_KEY">
+                </div>
+                <div class="flex items-end">
+                    <button id="loadData" class="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            加载中...
+                        </div>
+                        <span class="load-text">
+                            <i class="fas fa-sync mr-2"></i>加载数据
+                        </span>
                     </button>
                 </div>
             </div>
-        </div>
 
-        <!-- 数据管理页面 -->
-        <div id="dataContent" class="tab-content active">
-            <!-- 配置区域 -->
-            <div class="bg-white rounded-2xl shadow-xl p-8 mb-8 card-hover">
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-6">调查问卷数据管理面板</h1>
-                
-                <!-- API配置 -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-3">API地址</label>
-                        <input type="url" id="apiUrl" 
-                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-                               placeholder="https://your-app.onrender.com">
+            <!-- 状态显示 -->
+            <div id="statusDisplay" class="p-3 rounded-lg mb-4 hidden">
+                <div class="flex items-center">
+                    <div id="statusIndicator" class="w-3 h-3 rounded-full mr-2"></div>
+                    <span id="statusText"></span>
+                </div>
+            </div>
+
+            <!-- 统计信息 -->
+            <div id="statsSection" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-blue-600 text-sm font-medium">总记录数</div>
+                        <div id="totalCount" class="text-2xl font-bold text-blue-800">0</div>
                     </div>
-                    <div>
-                        <label class="block text-gray-700 font-medium mb-3">管理员密钥</label>
-                        <input type="password" id="adminKey" 
-                               class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-                               placeholder="请输入ADMIN_KEY">
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-green-600 text-sm font-medium">当前显示</div>
+                        <div id="currentCount" class="text-2xl font-bold text-green-800">0</div>
                     </div>
-                    <div class="flex items-end">
-                        <button id="loadData" class="w-full px-6 py-3 btn-primary text-white rounded-xl font-semibold">
-                            <div class="loading">
-                                <div class="spinner"></div>
-                                加载中...
-                            </div>
-                            <span class="load-text">
-                                <i class="fas fa-sync mr-2"></i>加载数据
-                            </span>
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <div class="text-purple-600 text-sm font-medium">最新记录</div>
+                        <div id="latestRecord" class="text-sm font-medium text-purple-800">-</div>
+                    </div>
+                    <div class="bg-orange-50 p-4 rounded-lg">
+                        <div class="text-orange-600 text-sm font-medium">操作</div>
+                        <button id="exportCSV" class="text-sm bg-orange-500 text-white px-3 py-1 rounded hover:bg-orange-600">
+                            <i class="fas fa-download mr-1"></i>导出CSV
                         </button>
                     </div>
                 </div>
-
-                <!-- 状态显示 -->
-                <div id="statusDisplay" class="p-4 rounded-xl mb-6 hidden">
-                    <div class="flex items-center">
-                        <div id="statusIndicator" class="w-3 h-3 rounded-full mr-3"></div>
-                        <span id="statusText"></span>
-                    </div>
-                </div>
-
-                <!-- 统计信息 -->
-                <div id="statsSection" class="hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-                        <div class="metric-card p-6 rounded-xl card-hover">
-                            <div class="text-blue-600 text-sm font-medium mb-2">总记录数</div>
-                            <div id="totalCount" class="text-3xl font-bold text-blue-800">0</div>
-                            <div class="text-xs text-gray-500 mt-1">All Records</div>
-                        </div>
-                        <div class="metric-card p-6 rounded-xl card-hover">
-                            <div class="text-green-600 text-sm font-medium mb-2">当前显示</div>
-                            <div id="currentCount" class="text-3xl font-bold text-green-800">0</div>
-                            <div class="text-xs text-gray-500 mt-1">Current Page</div>
-                        </div>
-                        <div class="metric-card p-6 rounded-xl card-hover">
-                            <div class="text-purple-600 text-sm font-medium mb-2">最新记录</div>
-                            <div id="latestRecord" class="text-lg font-medium text-purple-800">-</div>
-                            <div class="text-xs text-gray-500 mt-1">Latest Entry</div>
-                        </div>
-                        <div class="metric-card p-6 rounded-xl card-hover">
-                            <div class="text-orange-600 text-sm font-medium mb-2">导出操作</div>
-                            <button id="exportCSV" class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-all duration-300 text-sm font-medium">
-                                <i class="fas fa-download mr-1"></i>导出CSV
-                            </button>
-                        </div>
-                        <div class="metric-card p-6 rounded-xl card-hover">
-                            <div class="text-red-600 text-sm font-medium mb-2">批量诊断</div>
-                            <button id="batchDiagnosis" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all duration-300 text-sm font-medium">
-                                <i class="fas fa-magic mr-1"></i>批量分析
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 分页控制 -->
-                <div id="paginationSection" class="hidden">
-                    <div class="flex items-center justify-between mb-6 bg-gray-50 p-4 rounded-xl">
-                        <div class="flex items-center space-x-3">
-                            <label class="text-gray-700 font-medium">每页显示:</label>
-                            <select id="limitSelect" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                                <option value="10">10</option>
-                                <option value="25" selected>25</option>
-                                <option value="50">50</option>
-                                <option value="100">100</option>
-                            </select>
-                        </div>
-                        <div class="flex items-center space-x-3">
-                            <button id="prevPage" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 disabled:opacity-50 transition-all duration-300" disabled>
-                                <i class="fas fa-chevron-left mr-1"></i>上一页
-                            </button>
-                            <span id="pageInfo" class="text-gray-600 font-medium px-3">页 1</span>
-                            <button id="nextPage" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 disabled:opacity-50 transition-all duration-300">
-                                下一页<i class="fas fa-chevron-right ml-1"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            <!-- 数据表格 -->
-            <div class="bg-white rounded-2xl shadow-xl overflow-hidden card-hover">
-                <div class="gradient-bg p-6 text-white">
-                    <h2 class="text-xl font-bold">调查数据</h2>
-                    <p class="text-blue-100 mt-1">Restaurant Survey Data</p>
-                </div>
-                <div class="overflow-x-auto">
-                    <div id="dataContainer" class="p-12 text-center text-gray-500">
-                        <i class="fas fa-database text-6xl mb-6 text-gray-300"></i>
-                        <p class="text-xl">请先配置API地址和管理员密钥，然后点击"加载数据"</p>
-                        <p class="text-sm text-gray-400 mt-2">Configure API settings to load restaurant survey data</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- AI诊断页面 -->
-        <div id="diagnosisContent" class="tab-content">
-            <!-- 选择数据源 -->
-            <div class="bg-white rounded-2xl shadow-xl p-8 mb-8 card-hover">
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent mb-6">餐饮店AI诊断系统</h1>
-                
-                <div class="mb-6">
-                    <div class="flex items-center space-x-6">
-                        <label class="text-gray-700 font-medium text-lg">选择诊断数据来源：</label>
-                        <div class="flex space-x-6">
-                            <label class="flex items-center bg-blue-50 px-4 py-2 rounded-lg cursor-pointer hover:bg-blue-100 transition-all duration-300">
-                                <input type="radio" name="dataSource" value="manual" checked class="mr-3">
-                                <span class="font-medium">手动输入数据</span>
-                            </label>
-                            <label class="flex items-center bg-green-50 px-4 py-2 rounded-lg cursor-pointer hover:bg-green-100 transition-all duration-300">
-                                <input type="radio" name="dataSource" value="api" class="mr-3">
-                                <span class="font-medium">使用API数据</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="apiDataSelector" class="hidden bg-gray-50 p-6 rounded-xl">
-                    <div class="mb-4">
-                        <label class="block text-gray-700 font-medium mb-3">选择要诊断的记录：</label>
-                        <select id="recordSelect" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500">
-                            <option value="">请选择一条记录进行诊断</option>
+            <!-- 分页控制 -->
+            <div id="paginationSection" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-2">
+                        <label class="text-gray-700">每页显示:</label>
+                        <select id="limitSelect" class="px-3 py-1 border rounded">
+                            <option value="10">10</option>
+                            <option value="25" selected>25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
                         </select>
                     </div>
-                    <button id="loadSelectedRecord" class="bg-blue-500 text-white px-6 py-3 rounded-xl hover:bg-blue-600 font-medium transition-all duration-300">
-                        <i class="fas fa-upload mr-2"></i>载入选中记录
-                    </button>
+                    <div class="flex items-center space-x-2">
+                        <button id="prevPage" class="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50" disabled>
+                            <i class="fas fa-chevron-left"></i> 上一页
+                        </button>
+                        <span id="pageInfo" class="text-gray-600">页 1</span>
+                        <button id="nextPage" class="px-3 py-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 disabled:opacity-50">
+                            下一页 <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
+        </div>
 
-            <!-- 分步表单 -->
-            <div id="manualForm" class="bg-white rounded-2xl shadow-xl p-8 mb-8 card-hover">
-                <div class="progress-text text-center mb-6">步骤 <span id="currentStep">1</span>/3</div>
-                <div class="steps">
-                    <div class="step active" data-step="1">1<span class="step-label">基础信息</span></div>
-                    <div class="step" data-step="2">2<span class="step-label">运营数据</span></div>
-                    <div class="step" data-step="3">3<span class="step-label">体验数据</span></div>
+        <!-- 数据表格 -->
+        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+            <div class="p-4 border-b">
+                <h2 class="text-lg font-semibold text-gray-800">调查数据</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <div id="dataContainer" class="p-8 text-center text-gray-500">
+                    <i class="fas fa-database text-4xl mb-4"></i>
+                    <p>请先配置API地址和管理员密钥,然后点击"加载数据"</p>
                 </div>
+            </div>
+        </div>
+    </div>
 
-                <!-- 步骤1: 基础信息 -->
-                <div class="form-step active" id="step1">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                        <i class="fas fa-store mr-3 text-blue-600"></i>基础信息
+    <!-- 详情/诊断弹窗 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-file-alt text-blue-500 mr-2"></i>
+                        <span id="modalTitle">详细信息</span>
                     </h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">门店名称 *</label>
-                            <input type="text" id="storeName" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：朝阳路快餐店">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">业态类型 *</label>
-                            <select id="storeType" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300">
-                                <option value="">请选择业态类型</option>
-                                <option value="快餐">快餐</option>
-                                <option value="火锅">火锅</option>
-                                <option value="正餐">正餐</option>
-                                <option value="茶餐厅">茶餐厅</option>
-                                <option value="自助餐">自助餐</option>
-                                <option value="烧烤">烧烤</option>
-                                <option value="麻辣烫">麻辣烫</option>
-                                <option value="面条">面条</option>
-                                <option value="包子饺子">包子饺子</option>
-                                <option value="粥店">粥店</option>
-                                <option value="咖啡厅">咖啡厅</option>
-                                <option value="茶饮店">茶饮店</option>
-                                <option value="甜品店">甜品店</option>
-                                <option value="西餐厅">西餐厅</option>
-                                <option value="日韩料理">日韩料理</option>
-                                <option value="东南亚菜">东南亚菜</option>
-                                <option value="小吃摊档">小吃摊档</option>
-                                <option value="食堂档口">食堂档口</option>
-                                <option value="酒吧">酒吧</option>
-                                <option value="夜宵店">夜宵店</option>
-                                <option value="其他">其他</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">营业收入（元/月）*</label>
-                            <input type="number" id="revenue" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：150000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">食材成本（元/月）*</label>
-                            <input type="number" id="foodCost" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：60000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">人力成本（元/月）*</label>
-                            <input type="number" id="laborCost" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：50000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">租金成本（元/月）*</label>
-                            <input type="number" id="rentCost" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：30000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">日均客流（人/天）*</label>
-                            <input type="number" id="dailyCustomers" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：150" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">座位数（个）*</label>
-                            <input type="number" id="seats" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：50" min="1">
-                        </div>
-                    </div>
-                    <div class="flex justify-between mt-8">
-                        <button type="button" id="prevBtn1" disabled class="px-6 py-3 bg-gray-300 text-gray-500 rounded-xl cursor-not-allowed">上一步</button>
-                        <button type="button" id="nextBtn1" class="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-all duration-300">下一步</button>
-                    </div>
-                </div>
-
-                <!-- 步骤2: 运营数据 -->
-                <div class="form-step" id="step2">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                        <i class="fas fa-chart-line mr-3 text-green-600"></i>运营数据
-                    </h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">线上营收（元/月）*</label>
-                            <input type="number" id="takeawayRevenue" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：60000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">营销费用（元/月）*</label>
-                            <input type="number" id="marketingCost" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：15000" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">老客户复购次数（次/月）*</label>
-                            <input type="number" id="memberRepurchase" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：30" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">总客流（人/月）*</label>
-                            <input type="number" id="totalCustomers" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：4500" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">水电气成本（元/月）*</label>
-                            <input type="number" id="energyCost" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：8000" min="0">
-                        </div>
-                    </div>
-                    <div class="flex justify-between mt-8">
-                        <button type="button" id="prevBtn2" class="px-6 py-3 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-all duration-300">上一步</button>
-                        <button type="button" id="nextBtn2" class="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 transition-all duration-300">下一步</button>
-                    </div>
-                </div>
-
-                <!-- 步骤3: 体验数据 -->
-                <div class="form-step" id="step3">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                        <i class="fas fa-star mr-3 text-yellow-600"></i>体验数据
-                    </h2>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">各平台团购均评分（0-5分）*</label>
-                            <input type="number" id="reviewScore" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：3.8" min="0" max="5" step="0.1">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">差评数（条/月）*</label>
-                            <input type="number" id="negativeComments" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：25" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">总评论数（条/月）*</label>
-                            <input type="number" id="totalComments" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：400" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">社交媒体提及量（次/条）*</label>
-                            <input type="number" id="socialMentions" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：80" min="0">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">服务差评占比（%）*</label>
-                            <input type="number" id="serviceComplaints" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：40" min="0" max="100">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 font-medium mb-3">口味差评占比（%）*</label>
-                            <input type="number" id="tasteComplaints" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300" placeholder="例如：30" min="0" max="100">
-                        </div>
-                    </div>
-                    <div class="flex justify-between mt-8">
-                        <button type="button" id="prevBtn3" class="px-6 py-3 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-all duration-300">上一步</button>
-                        <button type="button" id="generateReport" class="px-8 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-xl hover:from-green-600 hover:to-blue-600 text-lg font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                            <i class="fas fa-magic mr-2"></i>生成AI诊断报告
+                    <div class="flex space-x-2">
+                        <button id="exportImageBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 hidden">
+                            <i class="fas fa-image mr-2"></i>保存长图
+                        </button>
+                        <button id="closeModal" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-2xl"></i>
                         </button>
                     </div>
                 </div>
 
-                <!-- 加载动画 -->
-                <div id="loadingSection" class="text-center py-12 hidden">
-                    <div class="spinner mx-auto w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-6"></div>
-                    <h3 class="text-xl font-bold text-gray-700 mb-2">正在生成诊断报告...</h3>
-                    <p class="text-gray-500">AI正在分析您的数据，请稍候...</p>
+                <!-- 标签页导航 -->
+                <div class="border-b mb-6">
+                    <button class="tab-button active" data-tab="details">
+                        <i class="fas fa-info-circle mr-2"></i>数据详情
+                    </button>
+                    <button class="tab-button" data-tab="diagnosis">
+                        <i class="fas fa-stethoscope mr-2"></i>AI诊断报告
+                    </button>
                 </div>
-            </div>
 
-            <!-- 诊断报告区域 -->
-            <div id="reportContainer" class="hidden">
-                <div class="bg-white rounded-2xl shadow-xl p-8 card-hover">
-                    <h2 class="text-3xl font-bold text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-8">餐饮店盈利诊断报告及改进建议</h2>
-                    
-                    <!-- 健康状态红绿灯 -->
-                    <div class="mb-10">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                            <i class="fas fa-heartbeat mr-3 text-red-500"></i>一、健康状态红绿灯
-                        </h3>
-                        <div class="overflow-x-auto">
-                            <table class="health-table w-full">
-                                <thead>
-                                    <tr>
-                                        <th>核心指标</th>
-                                        <th>门店数值</th>
-                                        <th>健康状态</th>
-                                        <th>通俗解读</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="healthTableBody">
-                                    <!-- 动态生成内容 -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                <!-- 数据详情标签 -->
+                <div id="detailsTab" class="tab-content active">
+                    <div id="modalContent" class="space-y-6"></div>
+                </div>
 
-                    <!-- 行业对比雷达图 -->
-                    <div class="mb-10">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                            <i class="fas fa-chart-radar mr-3 text-blue-500"></i>二、行业对比分析
-                        </h3>
-                        <div class="text-center bg-gray-50 p-6 rounded-xl">
-                            <canvas id="radarChart" class="radar-chart" width="400" height="400"></canvas>
-                        </div>
-                        <div id="industryComparison" class="mt-6"></div>
-                    </div>
-
-                    <!-- 问题根因分析 -->
-                    <div class="mb-10">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                            <i class="fas fa-search mr-3 text-yellow-500"></i>三、问题根因分析
-                        </h3>
-                        <div id="rootCauseAnalysis"></div>
-                    </div>
-
-                    <!-- 老板行动指南 -->
-                    <div class="mb-10">
-                        <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                            <i class="fas fa-tasks mr-3 text-green-500"></i>四、老板行动指南
-                        </h3>
-                        <ul class="action-plans" id="actionPlans"></ul>
-                        <div id="keyRecommendation" class="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-l-4 border-blue-500"></div>
-                    </div>
-
-                    <!-- 下载报告 -->
-                    <div class="text-center mt-10 p-8 bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl">
-                        <h3 class="text-xl font-bold text-gray-800 mb-3 flex items-center justify-center">
-                            <i class="fas fa-download mr-2 text-blue-600"></i>报告下载
-                        </h3>
-                        <p class="text-gray-600 mb-6">点击下方按钮下载完整的诊断报告（HTML格式）</p>
-                        <a href="#" class="inline-block bg-gradient-to-r from-blue-500 to-purple-500 text-white px-8 py-4 rounded-xl hover:from-blue-600 hover:to-purple-600 font-bold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1" id="downloadLink">
-                            <i class="fas fa-download mr-2"></i>下载完整报告
-                        </a>
+                <!-- AI诊断标签 -->
+                <div id="diagnosisTab" class="tab-content">
+                    <div id="reportExport">
+                        <div id="diagnosisContent"></div>
                     </div>
                 </div>
             </div>
@@ -591,102 +387,243 @@
     </div>
 
     <script>
-        // 全局变量
         let currentData = [];
         let currentPage = 1;
         let totalRecords = 0;
         let limit = 25;
-        let selectedRecord = null;
-        let currentDiagnosisStep = 1;
+        let currentRecord = null;
 
-        // 诊断系统类
-        class RestaurantDiagnosis {
+        const apiUrl = document.getElementById('apiUrl');
+        const adminKey = document.getElementById('adminKey');
+        const loadData = document.getElementById('loadData');
+        const statusDisplay = document.getElementById('statusDisplay');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const statsSection = document.getElementById('statsSection');
+        const paginationSection = document.getElementById('paginationSection');
+        const dataContainer = document.getElementById('dataContainer');
+        const totalCount = document.getElementById('totalCount');
+        const currentCount = document.getElementById('currentCount');
+        const latestRecord = document.getElementById('latestRecord');
+        const exportCSV = document.getElementById('exportCSV');
+        const limitSelect = document.getElementById('limitSelect');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        const pageInfo = document.getElementById('pageInfo');
+        const detailModal = document.getElementById('detailModal');
+        const closeModal = document.getElementById('closeModal');
+        const exportImageBtn = document.getElementById('exportImageBtn');
+
+        // 升级版诊断系统类
+        class RestaurantDiagnosisAdvanced {
             constructor() {
                 this.thresholds = {
+                    // 基础成本指标
                     food_cost_ratio: 0.35,
                     labor_cost_ratio: 0.30,
                     rent_cost_ratio: 0.20,
                     marketing_cost_ratio: 0.10,
+                    utility_cost_ratio: 0.05,
                     gross_margin: 0.55,
+                    
+                    // 效率指标
                     table_turnover: 3.0,
-                    takeaway_ratio: [0.3, 0.5],
+                    revenue_per_sqm: 5000,  // 坪效: 元/平米/月
+                    revenue_per_employee: 30000,  // 人效: 元/人/月
+                    
+                    // 客户指标
+                    avg_spending: 50,  // 客单价
                     member_repurchase: 0.25,
-                    energy_cost_ratio: 0.05,
+                    
+                    // 线上指标
+                    takeaway_ratio: [0.3, 0.5],
                     review_score: 4.0,
                     negative_comment_rate: 0.05,
-                    social_mention: 100,
-                    service_complaint_rate: 0.30,
-                    taste_complaint_rate: 0.30
+                    
+                    // 内容营销指标
+                    content_marketing_index: 60,  // 综合评分
+                    short_video_count: 50,
+                    live_stream_count: 15,
+                    
+                    // 差评细分
+                    service_bad_review_rate: 0.30,
+                    taste_bad_review_rate: 0.30
                 };
 
                 this.industryBenchmarks = {
-                    '快餐': { table_turnover: 4.5, gross_margin: 0.60, takeaway_ratio: 0.4 },
-                    '火锅': { table_turnover: 3.5, gross_margin: 0.65, takeaway_ratio: 0.3 },
-                    '正餐': { table_turnover: 2.5, gross_margin: 0.58, takeaway_ratio: 0.25 },
-                    '茶餐厅': { table_turnover: 3.0, gross_margin: 0.55, takeaway_ratio: 0.3 },
-                    '自助餐': { table_turnover: 2.0, gross_margin: 0.50, takeaway_ratio: 0.1 },
-                    '烧烤': { table_turnover: 3.0, gross_margin: 0.62, takeaway_ratio: 0.35 },
-                    '麻辣烫': { table_turnover: 4.0, gross_margin: 0.58, takeaway_ratio: 0.5 },
-                    '面条': { table_turnover: 4.5, gross_margin: 0.60, takeaway_ratio: 0.45 },
-                    '包子饺子': { table_turnover: 4.0, gross_margin: 0.55, takeaway_ratio: 0.4 },
-                    '粥店': { table_turnover: 4.0, gross_margin: 0.52, takeaway_ratio: 0.5 },
-                    '咖啡厅': { table_turnover: 2.0, gross_margin: 0.70, takeaway_ratio: 0.4 },
-                    '茶饮店': { table_turnover: 5.0, gross_margin: 0.65, takeaway_ratio: 0.6 },
-                    '甜品店': { table_turnover: 3.5, gross_margin: 0.68, takeaway_ratio: 0.45 },
-                    '西餐厅': { table_turnover: 2.0, gross_margin: 0.60, takeaway_ratio: 0.2 },
-                    '日韩料理': { table_turnover: 2.5, gross_margin: 0.62, takeaway_ratio: 0.3 },
-                    '东南亚菜': { table_turnover: 2.5, gross_margin: 0.58, takeaway_ratio: 0.25 },
-                    '小吃摊档': { table_turnover: 6.0, gross_margin: 0.50, takeaway_ratio: 0.3 },
-                    '食堂档口': { table_turnover: 5.0, gross_margin: 0.45, takeaway_ratio: 0.1 },
-                    '酒吧': { table_turnover: 1.5, gross_margin: 0.75, takeaway_ratio: 0.1 },
-                    '夜宵店': { table_turnover: 3.0, gross_margin: 0.60, takeaway_ratio: 0.4 },
-                    '其他': { table_turnover: 3.0, gross_margin: 0.55, takeaway_ratio: 0.3 }
+                    '快餐': { table_turnover: 4.5, gross_margin: 0.60, takeaway_ratio: 0.4, revenue_per_sqm: 6000, avg_spending: 35 },
+                    '火锅': { table_turnover: 3.5, gross_margin: 0.65, takeaway_ratio: 0.3, revenue_per_sqm: 7000, avg_spending: 80 },
+                    '正餐': { table_turnover: 2.5, gross_margin: 0.58, takeaway_ratio: 0.25, revenue_per_sqm: 5500, avg_spending: 70 },
+                    '茶餐厅': { table_turnover: 3.0, gross_margin: 0.55, takeaway_ratio: 0.3, revenue_per_sqm: 5000, avg_spending: 45 },
+                    '咖啡厅': { table_turnover: 2.0, gross_margin: 0.70, takeaway_ratio: 0.4, revenue_per_sqm: 4500, avg_spending: 40 },
+                    '茶饮店': { table_turnover: 5.0, gross_margin: 0.65, takeaway_ratio: 0.6, revenue_per_sqm: 8000, avg_spending: 25 },
+                    '其他': { table_turnover: 3.0, gross_margin: 0.55, takeaway_ratio: 0.3, revenue_per_sqm: 5000, avg_spending: 50 }
+                };
+
+                // 商圈等级评分
+                this.businessCircleScores = {
+                    '一类商场里面': 95,
+                    '二类商场里面': 85,
+                    '一类商圈': 90,
+                    '二类商圈': 80,
+                    '一类主街': 85,
+                    '二类主街': 75,
+                    '一类社区': 70,
+                    '二类社区': 60
+                };
+
+                // 装修档次评分
+                this.decorationScores = {
+                    '中高档': 90,
+                    '中档': 75,
+                    '中低档': 60
                 };
             }
 
-            calculateKPI(inputData) {
+            calculateKPI(data) {
+                const totalCost = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + 
+                                (data.marketing_cost || 0) + (data.utility_cost || 0);
+                
+                // 计算员工数(根据人力成本和行业平均工资估算)
+                const estimatedEmployees = Math.max(1, Math.round((data.labor_cost || 0) / 5000));
+                
                 return {
-                    food_cost_ratio: inputData.食材成本 / inputData.营业收入,
-                    labor_cost_ratio: inputData.人力成本 / inputData.营业收入,
-                    rent_cost_ratio: inputData.租金成本 / inputData.营业收入,
-                    marketing_cost_ratio: inputData.营销费用 / inputData.营业收入,
-                    gross_margin: 1 - (inputData.食材成本 + inputData.人力成本 + inputData.租金成本 + inputData.营销费用 + inputData.水电气成本) / inputData.营业收入,
-                    table_turnover: inputData.日均客流 / inputData.座位数,
-                    takeaway_ratio: inputData.线上营收 / inputData.营业收入,
-                    member_repurchase: inputData.老客户复购次数 / inputData.总客流,
-                    energy_cost_ratio: inputData.水电气成本 / inputData.营业收入,
-                    review_score: inputData.各平台团购均评分,
-                    negative_comment_rate: inputData.差评数 / inputData.总评论数,
-                    social_mention: inputData.社交媒体提及量,
-                    service_complaint_rate: inputData.服务差评占比 / 100,
-                    taste_complaint_rate: inputData.口味差评占比 / 100
+                    // 基础成本率
+                    food_cost_ratio: (data.food_cost || 0) / (data.monthly_revenue || 1),
+                    labor_cost_ratio: (data.labor_cost || 0) / (data.monthly_revenue || 1),
+                    rent_cost_ratio: (data.rent_cost || 0) / (data.monthly_revenue || 1),
+                    marketing_cost_ratio: (data.marketing_cost || 0) / (data.monthly_revenue || 1),
+                    utility_cost_ratio: (data.utility_cost || 0) / (data.monthly_revenue || 1),
+                    gross_margin: 1 - (totalCost / (data.monthly_revenue || 1)),
+                    
+                    // 效率指标
+                    table_turnover: (data.daily_customers || 0) / (data.seats || 1),
+                    revenue_per_sqm: (data.monthly_revenue || 0) / (data.store_area || 1),  // 坪效
+                    revenue_per_employee: (data.monthly_revenue || 0) / estimatedEmployees,  // 人效
+                    
+                    // 客户指标
+                    avg_spending: (data.monthly_revenue || 0) / (data.total_customers || 1),  // 客单价
+                    member_repurchase: (data.repeat_customers || 0) / (data.total_customers || 1),
+                    
+                    // 线上指标
+                    takeaway_ratio: (data.online_revenue || 0) / (data.monthly_revenue || 1),
+                    review_score: data.average_rating || 0,
+                    negative_comment_rate: (data.bad_reviews || 0) / (data.total_reviews || 1),
+                    
+                    // 内容营销指数(综合评分)
+                    content_marketing_index: this.calculateContentMarketingIndex(data),
+                    short_video_count: data.short_video_count || 0,
+                    live_stream_count: data.live_stream_count || 0,
+                    
+                    // 差评分析
+                    service_bad_review_rate: (data.service_bad_reviews || 0) / (data.bad_reviews || 1),
+                    taste_bad_review_rate: (data.taste_bad_reviews || 0) / (data.bad_reviews || 1),
+                    
+                    // 选址匹配度
+                    location_match_score: this.calculateLocationMatchScore(data),
+                    
+                    // 营销健康度
+                    marketing_health_score: this.calculateMarketingHealthScore(data),
+                    
+                    // 辅助数据
+                    estimated_employees: estimatedEmployees
                 };
             }
 
-            diagnose(inputData) {
-                const kpi = this.calculateKPI(inputData);
-                const report = {
-                    healthCheck: {},
-                    rootCauses: [],
+            // 计算内容营销指数
+            calculateContentMarketingIndex(data) {
+                let score = 0;
+                
+                // 短视频发布量得分 (0-40分)
+                const videoScore = Math.min(40, (data.short_video_count || 0) / 100 * 40);
+                score += videoScore;
+                
+                // 直播场次得分 (0-30分)
+                const liveScore = Math.min(30, (data.live_stream_count || 0) / 30 * 30);
+                score += liveScore;
+                
+                // 营销情况得分 (0-30分)
+                const marketingSituationScore = {
+                    '有自己团队': 30,
+                    '找代运营': 25,
+                    '老板运营': 20,
+                    '无': 0
+                };
+                score += marketingSituationScore[data.marketing_situation] || 15;
+                
+                return Math.round(score);
+            }
+
+            // 计算选址匹配度评分
+            calculateLocationMatchScore(data) {
+                let score = 0;
+                
+                // 商圈得分 (0-40分)
+                const circleScore = (this.businessCircleScores[data.business_circle] || 70) / 100 * 40;
+                score += circleScore;
+                
+                // 装修档次得分 (0-30分)
+                const decorScore = (this.decorationScores[data.decoration_level] || 70) / 100 * 30;
+                score += decorScore;
+                
+                // 业态匹配得分 (0-30分) - 基于坪效和客单价
+                const benchmark = this.industryBenchmarks[data.business_type] || this.industryBenchmarks['其他'];
+                const revenuePerSqm = (data.monthly_revenue || 0) / (data.store_area || 1);
+                const matchScore = Math.min(30, (revenuePerSqm / benchmark.revenue_per_sqm) * 30);
+                score += matchScore;
+                
+                return Math.round(score);
+            }
+
+            // 计算营销健康度
+            calculateMarketingHealthScore(data) {
+                let score = 0;
+                
+                // ROI得分 (0-40分) - 营销成本占比越低越好
+                const marketingRatio = (data.marketing_cost || 0) / (data.monthly_revenue || 1);
+                const roiScore = Math.max(0, 40 - (marketingRatio * 100 * 4));
+                score += roiScore;
+                
+                // 线上表现得分 (0-30分)
+                const onlineScore = Math.min(30, ((data.average_rating || 0) / 5) * 30);
+                score += onlineScore;
+                
+                // 内容营销得分 (0-30分)
+                const contentScore = this.calculateContentMarketingIndex(data) / 100 * 30;
+                score += contentScore;
+                
+                return Math.round(score);
+            }
+
+            diagnose(data) {
+                const kpi = this.calculateKPI(data);
+                const report = { 
+                    healthCheck: {}, 
+                    rootCauses: [], 
                     actionPlans: [],
-                    industryComparison: {}
+                    overallScore: 0,
+                    dimensionScores: {}
                 };
 
-                // 健康检查
+                // 核心指标健康检查
                 const indicators = {
                     'food_cost_ratio': '食材成本率',
-                    'labor_cost_ratio': '人力成本率', 
+                    'labor_cost_ratio': '人力成本率',
                     'rent_cost_ratio': '租金成本率',
                     'marketing_cost_ratio': '营销成本率',
+                    'utility_cost_ratio': '水电气成本率',
                     'gross_margin': '毛利率',
                     'table_turnover': '翻台率',
-                    'takeaway_ratio': '线上占比',
+                    'revenue_per_sqm': '坪效',
+                    'revenue_per_employee': '人效',
+                    'avg_spending': '客单价',
                     'member_repurchase': '会员复购率',
-                    'energy_cost_ratio': '水电气成本率',
+                    'takeaway_ratio': '线上占比',
                     'review_score': '团购评分',
                     'negative_comment_rate': '差评率',
-                    'service_complaint_rate': '服务差评率',
-                    'taste_complaint_rate': '口味差评率'
+                    'content_marketing_index': '内容营销指数',
+                    'location_match_score': '选址匹配度',
+                    'marketing_health_score': '营销健康度'
                 };
 
                 for (const [key, name] of Object.entries(indicators)) {
@@ -694,16 +631,36 @@
                     const threshold = this.thresholds[key];
                     let status = '健康', statusClass = 'status-healthy';
 
-                    if (Array.isArray(threshold)) {
+                    // 评分类指标
+                    if (key.includes('score') || key.includes('index')) {
+                        if (value >= 80) {
+                            status = '优秀';
+                            statusClass = 'status-healthy';
+                        } else if (value >= 60) {
+                            status = '良好';
+                            statusClass = 'status-healthy';
+                        } else if (value >= 40) {
+                            status = '待改进';
+                            statusClass = 'status-warning';
+                        } else {
+                            status = '较差';
+                            statusClass = 'status-danger';
+                        }
+                    }
+                    // 比率类指标
+                    else if (Array.isArray(threshold)) {
                         if (value < threshold[0] || value > threshold[1]) {
                             status = '异常';
                             statusClass = 'status-danger';
                         }
                     } else {
-                        if ((key === 'gross_margin' || key === 'review_score' || key === 'member_repurchase') && value < threshold) {
+                        const isPositive = ['gross_margin', 'review_score', 'member_repurchase', 
+                                          'revenue_per_sqm', 'revenue_per_employee', 'avg_spending'].includes(key);
+                        
+                        if (isPositive && value < threshold) {
                             status = '偏低';
                             statusClass = 'status-warning';
-                        } else if ((key !== 'gross_margin' && key !== 'review_score' && key !== 'member_repurchase') && value > threshold) {
+                        } else if (!isPositive && value > threshold) {
                             status = '偏高';
                             statusClass = 'status-danger';
                         }
@@ -715,259 +672,351 @@
                         rawValue: value,
                         status,
                         statusClass,
-                        interpretation: this.getInterpretation(key, value)
+                        interpretation: this.getInterpretation(key, value, data)
                     };
                 }
 
+                // 维度评分
+                report.dimensionScores = {
+                    cost: this.calculateCostScore(kpi),
+                    efficiency: this.calculateEfficiencyScore(kpi),
+                    customer: this.calculateCustomerScore(kpi),
+                    marketing: kpi.marketing_health_score,
+                    location: kpi.location_match_score
+                };
+
+                // 总体评分
+                report.overallScore = Math.round(
+                    (report.dimensionScores.cost + 
+                     report.dimensionScores.efficiency + 
+                     report.dimensionScores.customer + 
+                     report.dimensionScores.marketing + 
+                     report.dimensionScores.location) / 5
+                );
+
                 // 根因分析
-                if (kpi.negative_comment_rate > this.thresholds.negative_comment_rate) {
-                    report.rootCauses.push({
-                        phenomenon: '差评率过高',
-                        causes: [
-                            `服务问题（占差评${inputData.服务差评占比 || 40}%）`,
-                            `口味问题（占差评${inputData.口味差评占比 || 30}%）`
-                        ],
-                        dataSupport: `近30天差评${inputData.差评数}条，差评率${(kpi.negative_comment_rate * 100).toFixed(1)}%`
-                    });
-                }
-
-                if (kpi.table_turnover < this.thresholds.table_turnover) {
-                    report.rootCauses.push({
-                        phenomenon: '翻台率偏低',
-                        causes: [
-                            '用餐时间过长',
-                            '座位利用率不高',
-                            '服务效率待提升'
-                        ],
-                        dataSupport: `当前翻台率${kpi.table_turnover.toFixed(1)}次/天，低于行业标准${this.thresholds.table_turnover}次`
-                    });
-                }
-
-                if (kpi.marketing_cost_ratio > this.thresholds.marketing_cost_ratio) {
-                    report.rootCauses.push({
-                        phenomenon: '营销成本过高',
-                        causes: [
-                            '广告投放效率低',
-                            '代运营费用高',
-                            '获客成本上升'
-                        ],
-                        dataSupport: `营销成本占比${(kpi.marketing_cost_ratio * 100).toFixed(1)}%，超过建议上限${this.thresholds.marketing_cost_ratio * 100}%`
-                    });
-                }
+                this.analyzeRootCauses(kpi, data, report);
 
                 // 行动建议
-                report.actionPlans.push({
-                    problem: '服务差评率高',
-                    solutions: [
-                        {
-                            measure: '加强服务培训，制定服务标准',
-                            cost: '5000元/月',
-                            effect: '服务差评率下降30%，整体评分提升0.2分',
-                            priority: '高',
-                            priorityClass: 'priority-high'
-                        },
-                        {
-                            measure: '优化点餐流程，减少等待时间',
-                            cost: '8000元',
-                            effect: '用餐体验提升，翻台率增加15%',
-                            priority: '中',
-                            priorityClass: 'priority-medium'
-                        }
-                    ]
-                });
-
-                if (kpi.marketing_cost_ratio > this.thresholds.marketing_cost_ratio) {
-                    report.actionPlans.push({
-                        problem: '营销成本过高',
-                        solutions: [
-                            {
-                                measure: '优化投流策略，提高转化率',
-                                cost: '3000元/月',
-                                effect: '营销成本下降20%，ROI提升25%',
-                                priority: '高',
-                                priorityClass: 'priority-high'
-                            },
-                            {
-                                measure: '建立私域流量，减少依赖平台',
-                                cost: '10000元',
-                                effect: '长期降低获客成本30%',
-                                priority: '中',
-                                priorityClass: 'priority-medium'
-                            }
-                        ]
-                    });
-                }
-
-                if (kpi.table_turnover < this.thresholds.table_turnover) {
-                    report.actionPlans.push({
-                        problem: '翻台率偏低',
-                        solutions: [
-                            {
-                                measure: '调整菜品结构，缩短出餐时间',
-                                cost: '5000元',
-                                effect: '翻台率提升20%，日均客流增加',
-                                priority: '高',
-                                priorityClass: 'priority-high'
-                            },
-                            {
-                                measure: '引入排队系统，提高座位利用率',
-                                cost: '2000元',
-                                effect: '座位利用率提升15%',
-                                priority: '低',
-                                priorityClass: 'priority-low'
-                            }
-                        ]
-                    });
-                }
+                this.generateActionPlans(kpi, data, report);
 
                 return report;
             }
 
-            formatValue(key, value) {
-                if (value === null || value === undefined || isNaN(value)) return '-';
+            calculateCostScore(kpi) {
+                let score = 100;
+                if (kpi.food_cost_ratio > 0.40) score -= 20;
+                else if (kpi.food_cost_ratio > 0.35) score -= 10;
                 
-                const percentageKeys = ['food_cost_ratio', 'labor_cost_ratio', 'rent_cost_ratio', 
-                                      'marketing_cost_ratio', 'gross_margin', 'takeaway_ratio', 
-                                      'member_repurchase', 'energy_cost_ratio', 'negative_comment_rate',
-                                      'service_complaint_rate', 'taste_complaint_rate'];
+                if (kpi.labor_cost_ratio > 0.35) score -= 20;
+                else if (kpi.labor_cost_ratio > 0.30) score -= 10;
                 
-                if (percentageKeys.includes(key)) {
-                    return (value * 100).toFixed(1) + '%';
-                } else if (key === 'review_score') {
-                    return value.toFixed(1) + '分';
-                } else if (key === 'table_turnover') {
-                    return value.toFixed(1) + '次/天';
-                } else {
-                    return value.toString();
+                if (kpi.rent_cost_ratio > 0.25) score -= 20;
+                else if (kpi.rent_cost_ratio > 0.20) score -= 10;
+                
+                return Math.max(0, score);
+            }
+
+            calculateEfficiencyScore(kpi) {
+                let score = 0;
+                
+                // 翻台率得分
+                if (kpi.table_turnover >= 4) score += 35;
+                else if (kpi.table_turnover >= 3) score += 25;
+                else score += 15;
+                
+                // 坪效得分
+                if (kpi.revenue_per_sqm >= 6000) score += 35;
+                else if (kpi.revenue_per_sqm >= 4000) score += 25;
+                else score += 15;
+                
+                // 人效得分
+                if (kpi.revenue_per_employee >= 35000) score += 30;
+                else if (kpi.revenue_per_employee >= 25000) score += 20;
+                else score += 10;
+                
+                return score;
+            }
+
+            calculateCustomerScore(kpi) {
+                let score = 0;
+                
+                // 评分
+                score += (kpi.review_score / 5) * 40;
+                
+                // 复购率
+                score += Math.min(30, kpi.member_repurchase * 100);
+                
+                // 差评率
+                if (kpi.negative_comment_rate < 0.03) score += 30;
+                else if (kpi.negative_comment_rate < 0.05) score += 20;
+                else score += 10;
+                
+                return Math.round(score);
+            }
+
+            analyzeRootCauses(kpi, data, report) {
+                // 成本问题
+                if (kpi.food_cost_ratio > 0.35) {
+                    report.rootCauses.push({
+                        phenomenon: '食材成本率过高',
+                        causes: [
+                            '采购议价能力不足',
+                            '食材损耗率高',
+                            '出品份量标准不统一',
+                            '菜品定价偏低'
+                        ],
+                        dataSupport: `食材成本占比${(kpi.food_cost_ratio * 100).toFixed(1)}%,建议控制在35%以内`
+                    });
+                }
+
+                // 效率问题
+                if (kpi.revenue_per_sqm < 4000) {
+                    report.rootCauses.push({
+                        phenomenon: '坪效偏低',
+                        causes: [
+                            '空间利用率不足',
+                            '客流量不足',
+                            '客单价偏低',
+                            '营业时间利用不充分'
+                        ],
+                        dataSupport: `当前坪效${kpi.revenue_per_sqm.toFixed(0)}元/㎡/月,行业平均约5000元`
+                    });
+                }
+
+                // 客户体验问题
+                if (kpi.negative_comment_rate > 0.05) {
+                    report.rootCauses.push({
+                        phenomenon: '差评率过高',
+                        causes: [
+                            `服务问题占差评${(kpi.service_bad_review_rate * 100).toFixed(1)}%`,
+                            `口味问题占差评${(kpi.taste_bad_review_rate * 100).toFixed(1)}%`
+                        ],
+                        dataSupport: `差评率${(kpi.negative_comment_rate * 100).toFixed(1)}%,需控制在5%以内`
+                    });
+                }
+
+                // 营销问题
+                if (kpi.content_marketing_index < 50) {
+                    report.rootCauses.push({
+                        phenomenon: '内容营销不足',
+                        causes: [
+                            `短视频月发布量仅${kpi.short_video_count}条`,
+                            `直播场次仅${kpi.live_stream_count}次`,
+                            '缺乏系统化的内容运营'
+                        ],
+                        dataSupport: `内容营销指数${kpi.content_marketing_index}分,建议至少达到60分`
+                    });
                 }
             }
 
-            getInterpretation(key, value) {
-                const pct = (value * 100).toFixed(1);
-                const num = value.toFixed(1);
-                const isNumber = typeof value === 'number' && !isNaN(value);
-    
+            generateActionPlans(kpi, data, report) {
+                // 成本优化
+                if (kpi.food_cost_ratio > 0.35) {
+                    report.actionPlans.push({
+                        problem: '食材成本率过高',
+                        priority: '高',
+                        solutions: [{
+                            measure: '建立标准化出品流程,控制食材损耗',
+                            cost: '5000元(培训+设备)',
+                            effect: '预计降低食材成本率3-5%,月节省' + Math.round(data.monthly_revenue * 0.04) + '元',
+                            timeline: '1个月见效',
+                            priorityClass: 'priority-high'
+                        }]
+                    });
+                }
+
+                // 效率提升
+                if (kpi.revenue_per_sqm < 4000) {
+                    report.actionPlans.push({
+                        problem: '坪效偏低',
+                        priority: '高',
+                        solutions: [{
+                            measure: '优化座位布局,增加高峰期翻台率',
+                            cost: '8000元(布局调整)',
+                            effect: '预计提升坪效20%,月增收' + Math.round(data.monthly_revenue * 0.2) + '元',
+                            timeline: '2周见效',
+                            priorityClass: 'priority-high'
+                        }]
+                    });
+                }
+
+                // 内容营销
+                if (kpi.content_marketing_index < 60) {
+                    report.actionPlans.push({
+                        problem: '内容营销投入不足',
+                        priority: '中',
+                        solutions: [{
+                            measure: '建立短视频和直播内容日历,提升发布频率',
+                            cost: '3000元/月(内容制作)',
+                            effect: '预计提升线上曝光度50%,带来10-15%新客',
+                            timeline: '2-3个月见效',
+                            priorityClass: 'priority-medium'
+                        }]
+                    });
+                }
+
+                // 客户体验
+                if (kpi.service_bad_review_rate > 0.3) {
+                    report.actionPlans.push({
+                        problem: '服务差评占比高',
+                        priority: '高',
+                        solutions: [{
+                            measure: '建立服务SOP标准,强化员工培训',
+                            cost: '4000元/月',
+                            effect: '预计降低服务差评50%,整体评分提升0.3分',
+                            timeline: '1个月见效',
+                            priorityClass: 'priority-high'
+                        }]
+                    });
+                }
+            }
+
+            formatValue(key, value) {
+                if (key.includes('score') || key.includes('index')) {
+                    return Math.round(value) + '分';
+                }
+                if (key === 'revenue_per_sqm') {
+                    return '¥' + Math.round(value) + '/㎡';
+                }
+                if (key === 'revenue_per_employee') {
+                    return '¥' + Math.round(value);
+                }
+                if (key === 'avg_spending') {
+                    return '¥' + Math.round(value);
+                }
+                if (key === 'short_video_count' || key === 'live_stream_count') {
+                    return Math.round(value) + '条/月';
+                }
+                if (key === 'review_score') {
+                    return value.toFixed(1) + '分';
+                }
+                if (key === 'table_turnover') {
+                    return value.toFixed(1) + '次/天';
+                }
+                return (value * 100).toFixed(1) + '%';
+            }
+
+            getInterpretation(key, value, data) {
                 const interpretations = {
-                    food_cost_ratio: `食材成本约占收入的${pct}%。比例偏高可能挤压毛利，可从采购议价、损耗控制、出品标准和菜品定价等环节综合排查；也需结合业态与客单价水平判断。`,
-                    labor_cost_ratio: `人工成本约占收入的${pct}%。若长期高于约30%，可评估人效、排班与薪酬结构；淡旺季与营业时段差异也会带来波动，建议结合历史趋势与同类门店对比。`,
-                    rent_cost_ratio: `房租约占收入的${pct}%。接近或超过约20%可能带来压力，但商圈溢价、品效、外卖占比与季节性都会影响可承受度，需一并评估。`,
-                    marketing_cost_ratio: `营销成本约占收入的${pct}%。若长期高于约10%需关注ROI，可从投流效率、代运营费用、获客成本等维度优化；但新店或拓展期适度提高投入比例属正常现象。`,
-                    gross_margin: `每实现100元收入，毛利约为${(isNumber ? (value * 100).toFixed(1) : '—')}元。不同业态目标差异较大，许多快餐/休闲餐饮会把目标放在50-60元区间，仍需结合品类结构与定价策略来看。`,
-                    table_turnover: `每张桌子日均接待${num}波客人。快餐/简餐通常希望≥4波，但应与客单价、用餐高峰分布、外卖承载能力与翻台效率一起评估。`,
-                    takeaway_ratio: `线上（外卖等）收入占比${pct}%。占比较高可能说明堂食承载有限或线上运营更强，占比较低可能意味着线上仍有优化空间；最终取舍应与品牌定位与利润结构匹配。`,
-                    member_repurchase: `会员复购率约${pct}%。数值越高通常意味着粘性更好，但会受活动频次、拉新节奏与门店密度影响；建议结合自然复购与活动复购分拆观察。`,
-                    review_score: `团购/平台评分为${isNumber ? value.toFixed(1) : '—'}分。低于4分可能影响转化，应关注口味稳定性、出餐速度与服务体验；亦需留意评分样本量与时间分布。`,
-                    negative_comment_rate: `差评率约${pct}%。超过约5%建议跟进原因与样本量，区分偶发问题与系统性问题，并结合具体品类与时段定位整改。`,
-                    service_complaint_rate: `服务差评占比约${pct}%。超过约30%说明服务环节存在系统性问题，应从培训体系、服务流程、人员配置等方面系统性改进。`,
-                    taste_complaint_rate: `口味差评占比约${pct}%。超过约30%需重点关注出品稳定性、食材品质与厨师技能，这直接影响顾客回头率与口碑传播。`
+                    revenue_per_sqm: `每平米月产出${Math.round(value)}元。行业优秀水平为6000元/㎡以上`,
+                    revenue_per_employee: `人均月产值${Math.round(value)}元。建议达到3万元以上`,
+                    avg_spending: `平均客单价${Math.round(value)}元。需结合业态定位评估`,
+                    content_marketing_index: `内容营销综合得分${Math.round(value)}分(满分100)。包含短视频、直播及运营团队评估`,
+                    location_match_score: `选址匹配度${Math.round(value)}分。综合商圈、装修档次与业态的契合度`,
+                    marketing_health_score: `营销健康度${Math.round(value)}分。综合ROI、线上表现与内容营销能力`
                 };
-    
-                return interpretations[key] || `当前该指标为${isNumber ? value : '—'}，建议结合历史趋势、同类型门店与所在城市水平综合判断。`;
+                
+                if (interpretations[key]) return interpretations[key];
+                
+                const pct = (value * 100).toFixed(1);
+                const basicInterpretations = {
+                    food_cost_ratio: `食材成本占营收${pct}%`,
+                    labor_cost_ratio: `人力成本占营收${pct}%`,
+                    rent_cost_ratio: `租金占营收${pct}%`,
+                    marketing_cost_ratio: `营销成本占营收${pct}%`,
+                    utility_cost_ratio: `水电气占营收${pct}%`,
+                    gross_margin: `毛利率${pct}%`,
+                    table_turnover: `日均翻台${value.toFixed(1)}次`,
+                    takeaway_ratio: `线上营收占比${pct}%`,
+                    member_repurchase: `会员复购率${pct}%`,
+                    review_score: `平台评分${value.toFixed(1)}分`,
+                    negative_comment_rate: `差评率${pct}%`
+                };
+                
+                return basicInterpretations[key] || '';
+            }
+
+            getScoreBadgeClass(score) {
+                if (score >= 80) return 'score-excellent';
+                if (score >= 60) return 'score-good';
+                if (score >= 40) return 'score-average';
+                return 'score-poor';
+            }
+
+            getScoreLabel(score) {
+                if (score >= 80) return '优秀';
+                if (score >= 60) return '良好';
+                if (score >= 40) return '及格';
+                return '较差';
             }
         }
 
-        // DOM元素引用
-        const elements = {
-            // 标签页
-            dataTab: document.getElementById('dataTab'),
-            diagnosisTab: document.getElementById('diagnosisTab'),
-            dataContent: document.getElementById('dataContent'),
-            diagnosisContent: document.getElementById('diagnosisContent'),
-            
-            // 数据管理页面
-            apiUrl: document.getElementById('apiUrl'),
-            adminKey: document.getElementById('adminKey'),
-            loadData: document.getElementById('loadData'),
-            statusDisplay: document.getElementById('statusDisplay'),
-            statusIndicator: document.getElementById('statusIndicator'),
-            statusText: document.getElementById('statusText'),
-            statsSection: document.getElementById('statsSection'),
-            paginationSection: document.getElementById('paginationSection'),
-            dataContainer: document.getElementById('dataContainer'),
-            totalCount: document.getElementById('totalCount'),
-            currentCount: document.getElementById('currentCount'),
-            latestRecord: document.getElementById('latestRecord'),
-            exportCSV: document.getElementById('exportCSV'),
-            batchDiagnosis: document.getElementById('batchDiagnosis'),
-            limitSelect: document.getElementById('limitSelect'),
-            prevPage: document.getElementById('prevPage'),
-            nextPage: document.getElementById('nextPage'),
-            pageInfo: document.getElementById('pageInfo'),
-            
-            // 诊断页面
-            dataSourceRadios: document.querySelectorAll('input[name="dataSource"]'),
-            apiDataSelector: document.getElementById('apiDataSelector'),
-            recordSelect: document.getElementById('recordSelect'),
-            loadSelectedRecord: document.getElementById('loadSelectedRecord'),
-            manualForm: document.getElementById('manualForm'),
-            generateReport: document.getElementById('generateReport'),
-            reportContainer: document.getElementById('reportContainer'),
-            loadingSection: document.getElementById('loadingSection'),
-            currentStep: document.getElementById('currentStep'),
-            
-            // 表单字段
-            storeName: document.getElementById('storeName'),
-            storeType: document.getElementById('storeType'),
-            revenue: document.getElementById('revenue'),
-            foodCost: document.getElementById('foodCost'),
-            laborCost: document.getElementById('laborCost'),
-            rentCost: document.getElementById('rentCost'),
-            dailyCustomers: document.getElementById('dailyCustomers'),
-            seats: document.getElementById('seats'),
-            takeawayRevenue: document.getElementById('takeawayRevenue'),
-            marketingCost: document.getElementById('marketingCost'),
-            memberRepurchase: document.getElementById('memberRepurchase'),
-            totalCustomers: document.getElementById('totalCustomers'),
-            energyCost: document.getElementById('energyCost'),
-            reviewScore: document.getElementById('reviewScore'),
-            negativeComments: document.getElementById('negativeComments'),
-            totalComments: document.getElementById('totalComments'),
-            socialMentions: document.getElementById('socialMentions'),
-            serviceComplaints: document.getElementById('serviceComplaints'),
-            tasteComplaints: document.getElementById('tasteComplaints')
-        };
-
-        // 初始化诊断系统
-        const diagnosis = new RestaurantDiagnosis();
-
-        // 通知功能
-        function showNotification(message, type = 'success') {
-            const notification = document.getElementById('notification');
-            notification.textContent = message;
-            notification.className = `notification ${type}`;
-            notification.classList.add('show');
-            
-            setTimeout(() => {
-                notification.classList.remove('show');
-            }, 3000);
-        }
+        const diagnosis = new RestaurantDiagnosisAdvanced();
 
         // 标签页切换
-        function switchTab(tabName) {
-            const tabs = ['data', 'diagnosis'];
-            const tabButtons = [elements.dataTab, elements.diagnosisTab];
-            const tabContents = [elements.dataContent, elements.diagnosisContent];
-            
-            tabs.forEach((tab, index) => {
-                if (tab === tabName) {
-                    tabButtons[index].classList.add('text-blue-600', 'border-blue-600', 'bg-blue-50');
-                    tabButtons[index].classList.remove('text-gray-500');
-                    tabContents[index].classList.add('active');
-                } else {
-                    tabButtons[index].classList.remove('text-blue-600', 'border-blue-600', 'bg-blue-50');
-                    tabButtons[index].classList.add('text-gray-500');
-                    tabContents[index].classList.remove('active');
-                }
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const tab = button.dataset.tab;
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                button.classList.add('active');
+                document.getElementById(tab + 'Tab').classList.add('active');
+                
+                // 显示/隐藏导出按钮
+                exportImageBtn.classList.toggle('hidden', tab !== 'diagnosis');
             });
-        }
+        });
 
-        // 数据管理功能
+        // 导出长图
+        exportImageBtn.addEventListener('click', async () => {
+            const element = document.getElementById('reportExport');
+            exportImageBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>生成中...';
+            exportImageBtn.disabled = true;
+            
+            try {
+                const canvas = await html2canvas(element, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: '#ffffff'
+                });
+                
+                const link = document.createElement('a');
+                link.download = `${currentRecord.store_name}_诊断报告_${new Date().toISOString().slice(0,10)}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (error) {
+                alert('导出失败: ' + error.message);
+            } finally {
+                exportImageBtn.innerHTML = '<i class="fas fa-image mr-2"></i>保存长图';
+                exportImageBtn.disabled = false;
+            }
+        });
+
+        // 事件监听器
+        loadData.addEventListener('click', loadSurveyData);
+        exportCSV.addEventListener('click', downloadCSV);
+        limitSelect.addEventListener('change', (e) => {
+            limit = parseInt(e.target.value);
+            currentPage = 1;
+            loadSurveyData();
+        });
+        prevPage.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                loadSurveyData();
+            }
+        });
+        nextPage.addEventListener('click', () => {
+            currentPage++;
+            loadSurveyData();
+        });
+        closeModal.addEventListener('click', () => {
+            detailModal.classList.remove('active');
+        });
+        detailModal.addEventListener('click', (e) => {
+            if (e.target === detailModal) {
+                detailModal.classList.remove('active');
+            }
+        });
+
+        // 加载数据
         async function loadSurveyData() {
-            const api = elements.apiUrl.value.trim();
-            const key = elements.adminKey.value.trim();
+            const api = apiUrl.value.trim();
+            const key = adminKey.value.trim();
 
             if (!api || !key) {
-                showNotification('请输入API地址和管理员密钥', 'error');
+                showStatus('error', '请输入API地址和管理员密钥');
                 return;
             }
 
@@ -993,12 +1042,10 @@
                     displayData();
                     updateStats();
                     updatePagination();
-                    updateRecordSelect();
                     showStatus('connected', `成功加载 ${currentData.length} 条记录`);
-                    showNotification(`成功加载 ${currentData.length} 条记录`);
                     
-                    elements.statsSection.classList.remove('hidden');
-                    elements.paginationSection.classList.remove('hidden');
+                    statsSection.classList.remove('hidden');
+                    paginationSection.classList.remove('hidden');
                 } else {
                     const errorData = await response.json();
                     throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -1011,31 +1058,23 @@
                     errorMessage += '请求超时';
                 } else if (error.message.includes('401')) {
                     errorMessage += '管理员密钥错误';
-                } else if (error.message.includes('CORS')) {
-                    errorMessage += 'CORS错误';
                 } else {
                     errorMessage += error.message;
                 }
                 
                 showStatus('error', errorMessage);
-                showNotification(errorMessage, 'error');
-                elements.dataContainer.innerHTML = `
-                    <div class="p-12 text-center text-red-500">
-                        <i class="fas fa-exclamation-triangle text-6xl mb-6"></i>
-                        <p class="text-xl">${errorMessage}</p>
-                    </div>
-                `;
             } finally {
                 toggleLoading(false);
             }
         }
 
+        // 显示数据
         function displayData() {
             if (currentData.length === 0) {
-                elements.dataContainer.innerHTML = `
-                    <div class="p-12 text-center text-gray-500">
-                        <i class="fas fa-inbox text-6xl mb-6"></i>
-                        <p class="text-xl">暂无数据</p>
+                dataContainer.innerHTML = `
+                    <div class="p-8 text-center text-gray-500">
+                        <i class="fas fa-inbox text-4xl mb-4"></i>
+                        <p>暂无数据</p>
                     </div>
                 `;
                 return;
@@ -1049,14 +1088,12 @@
                 <tr>
                     <th>ID</th>
                     <th>提交时间</th>
+                    <th>门店识别码</th>
                     <th>门店名称</th>
                     <th>业态类型</th>
                     <th>月营收</th>
-                    <th>食材成本</th>
-                    <th>人力成本</th>
-                    <th>租金成本</th>
                     <th>日均客流</th>
-                    <th>座位数</th>
+                    <th>更新次数</th>
                     <th>操作</th>
                 </tr>
             `;
@@ -1068,19 +1105,17 @@
                 row.innerHTML = `
                     <td>${record.id}</td>
                     <td>${formatDate(record.timestamp)}</td>
+                    <td><span class="font-mono text-blue-600">${record.store_identifier || '-'}</span></td>
                     <td>${record.store_name || '-'}</td>
                     <td>${record.business_type || '-'}</td>
                     <td>${formatNumber(record.monthly_revenue)}</td>
-                    <td>${formatNumber(record.food_cost)}</td>
-                    <td>${formatNumber(record.labor_cost)}</td>
-                    <td>${formatNumber(record.rent_cost)}</td>
                     <td>${record.daily_customers || '-'}</td>
-                    <td>${record.seats || '-'}</td>
+                    <td><span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">${record.update_count || 0}次</span></td>
                     <td>
-                        <button onclick="viewRecord(${record.id})" class="text-blue-500 hover:text-blue-700 mr-2 p-1" title="查看详情">
+                        <button onclick="viewRecord(${record.id})" class="text-blue-500 hover:text-blue-700 mr-2" title="查看详情">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button onclick="selectForDiagnosis(${record.id})" class="text-green-500 hover:text-green-700 p-1" title="选择诊断">
+                        <button onclick="viewDiagnosis(${record.id})" class="text-purple-500 hover:text-purple-700" title="AI诊断">
                             <i class="fas fa-stethoscope"></i>
                         </button>
                     </td>
@@ -1089,113 +1124,1024 @@
             });
             table.appendChild(tbody);
 
-            elements.dataContainer.innerHTML = '';
-            elements.dataContainer.appendChild(table);
+            dataContainer.innerHTML = '';
+            dataContainer.appendChild(table);
         }
 
+        // 查看详情
+        window.viewRecord = function(id) {
+            const record = currentData.find(r => r.id === id);
+            if (!record) return;
+            currentRecord = record;
+
+            document.getElementById('modalTitle').textContent = '数据详情';
+            
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector('[data-tab="details"]').classList.add('active');
+            document.getElementById('detailsTab').classList.add('active');
+            exportImageBtn.classList.add('hidden');
+
+            const sections = [
+                {
+                    title: '基本信息',
+                    icon: 'fa-info-circle',
+                    color: 'blue',
+                    fields: [
+                        { label: '记录ID', value: record.id },
+                        { label: '提交时间', value: formatDate(record.timestamp) },
+                        { label: '门店识别码', value: record.store_identifier },
+                        { label: '门店名称', value: record.store_name },
+                        { label: '业态类型', value: record.business_type },
+                        { label: '门店面积', value: formatNumber(record.store_area) + ' 平方米' },
+                        { label: '商圈情况', value: record.business_circle },
+                        { label: '装修档次', value: record.decoration_level },
+                        { label: '更新次数', value: record.update_count || 0 }
+                    ]
+                },
+                {
+                    title: '财务数据',
+                    icon: 'fa-money-bill-wave',
+                    color: 'green',
+                    fields: [
+                        { label: '月营业收入', value: '¥' + formatNumber(record.monthly_revenue) },
+                        { label: '线上营收', value: '¥' + formatNumber(record.online_revenue) },
+                        { label: '食材成本', value: '¥' + formatNumber(record.food_cost) },
+                        { label: '人力成本', value: '¥' + formatNumber(record.labor_cost) },
+                        { label: '租金成本', value: '¥' + formatNumber(record.rent_cost) },
+                        { label: '水电气成本', value: '¥' + formatNumber(record.utility_cost) },
+                        { label: '营销费用', value: '¥' + formatNumber(record.marketing_cost) }
+                    ]
+                },
+                {
+                    title: '运营数据',
+                    icon: 'fa-chart-line',
+                    color: 'purple',
+                    fields: [
+                        { label: '日均客流', value: record.daily_customers + ' 人/天' },
+                        { label: '座位数', value: record.seats + ' 个' },
+                        { label: '总客流', value: formatNumber(record.total_customers) + ' 人/月' },
+                        { label: '复购老客户', value: formatNumber(record.repeat_customers) + ' 人/月' },
+                        { label: '线上主营平台', value: record.main_platforms },
+                        { label: '营销情况', value: record.marketing_situation }
+                    ]
+                },
+                {
+                    title: '体验数据',
+                    icon: 'fa-star',
+                    color: 'orange',
+                    fields: [
+                        { label: '平均评分', value: record.average_rating },
+                        { label: '总评论数', value: formatNumber(record.total_reviews) + ' 条/月' },
+                        { label: '差评数', value: formatNumber(record.bad_reviews) + ' 条/月' },
+                        { label: '服务差评', value: formatNumber(record.service_bad_reviews) + ' 条/月' },
+                        { label: '口味差评', value: formatNumber(record.taste_bad_reviews) + ' 条/月' },
+                        { label: '短视频发布量', value: formatNumber(record.short_video_count) + ' 条/月' },
+                        { label: '直播场次', value: formatNumber(record.live_stream_count) + ' 次/月' }
+                    ]
+                }
+            ];
+
+            let html = '';
+            sections.forEach(section => {
+                html += `
+                    <div class="bg-${section.color}-50 rounded-lg p-4 border border-${section.color}-200">
+                        <h3 class="text-lg font-semibold text-${section.color}-800 mb-3 flex items-center">
+                            <i class="fas ${section.icon} mr-2"></i>${section.title}
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            ${section.fields.map(field => `
+                                <div>
+                                    <div class="text-sm text-${section.color}-600 font-medium">${field.label}</div>
+                                    <div class="text-${section.color}-900">${field.value || '-'}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            document.getElementById('modalContent').innerHTML = html;
+            detailModal.classList.add('active');
+        };
+
+        // 查看诊断
+        window.viewDiagnosis = function(id) {
+            const record = currentData.find(r => r.id === id);
+            if (!record) return;
+            currentRecord = record;
+
+            document.getElementById('modalTitle').textContent = 'AI诊断报告';
+            
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector('[data-tab="diagnosis"]').classList.add('active');
+            document.getElementById('diagnosisTab').classList.add('active');
+            exportImageBtn.classList.remove('hidden');
+
+            generateDiagnosis(record);
+            detailModal.classList.add('active');
+        };
+
+        // 生成诊断报告
+        function generateDiagnosis(data) {
+            const report = diagnosis.diagnose(data);
+            const kpi = diagnosis.calculateKPI(data);
+            const benchmark = diagnosis.industryBenchmarks[data.business_type] || diagnosis.industryBenchmarks['其他'];
+            let html = '';
+
+            // 报告头部
+            html += `
+                <div class="report-header">
+                    <h1 style="font-size: 24px; margin-bottom: 10px;">${data.store_name} 经营诊断报告</h1>
+                    <p style="opacity: 0.9;">生成时间: ${new Date().toLocaleString()} | 报告编号: ${data.id}-${Date.now()}</p>
+                    <p style="opacity: 0.9; font-size: 14px;">业态: ${data.business_type} | 商圈: ${data.business_circle} | 装修: ${data.decoration_level}</p>
+                </div>
+            `;
+
+            // 总体评分
+            html += `
+                <div class="diagnosis-section">
+                    <h3>一、总体健康评分</h3>
+                    <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%); border-radius: 8px;">
+                        <div style="font-size: 72px; font-weight: bold; color: #667eea; margin-bottom: 10px;">
+                            ${report.overallScore}
+                        </div>
+                        <div class="score-badge ${diagnosis.getScoreBadgeClass(report.overallScore)}" style="font-size: 20px; padding: 8px 24px;">
+                            ${diagnosis.getScoreLabel(report.overallScore)}
+                        </div>
+                        <p style="margin-top: 15px; color: #666; font-size: 14px;">
+                            超过了同业态 <strong>${report.overallScore > 70 ? '60%' : report.overallScore > 50 ? '40%' : '20%'}</strong> 的门店
+                        </p>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+                        <div class="metric-card">
+                            <div class="metric-value" style="color: ${report.dimensionScores.cost >= 80 ? '#2ecc71' : report.dimensionScores.cost >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.cost}</div>
+                            <div class="metric-label">成本控制</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                ${report.dimensionScores.cost >= 80 ? '优秀' : report.dimensionScores.cost >= 60 ? '良好' : '待改进'}
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" style="color: ${report.dimensionScores.efficiency >= 80 ? '#2ecc71' : report.dimensionScores.efficiency >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.efficiency}</div>
+                            <div class="metric-label">运营效率</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                ${report.dimensionScores.efficiency >= 80 ? '优秀' : report.dimensionScores.efficiency >= 60 ? '良好' : '待改进'}
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" style="color: ${report.dimensionScores.customer >= 80 ? '#2ecc71' : report.dimensionScores.customer >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.customer}</div>
+                            <div class="metric-label">客户体验</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                ${report.dimensionScores.customer >= 80 ? '优秀' : report.dimensionScores.customer >= 60 ? '良好' : '待改进'}
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" style="color: ${report.dimensionScores.marketing >= 80 ? '#2ecc71' : report.dimensionScores.marketing >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.marketing}</div>
+                            <div class="metric-label">营销能力</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                ${report.dimensionScores.marketing >= 80 ? '优秀' : report.dimensionScores.marketing >= 60 ? '良好' : '待改进'}
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" style="color: ${report.dimensionScores.location >= 80 ? '#2ecc71' : report.dimensionScores.location >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.location}</div>
+                            <div class="metric-label">选址匹配</div>
+                            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                ${report.dimensionScores.location >= 80 ? '优秀' : report.dimensionScores.location >= 60 ? '良好' : '待改进'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 经营数据概览
+            const grossProfit = Math.round((data.monthly_revenue || 0) * kpi.gross_margin);
+            const totalCost = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + (data.marketing_cost || 0) + (data.utility_cost || 0);
+            const costRate = (totalCost / (data.monthly_revenue || 1)) * 100;
+            
+            html += `
+                <div class="diagnosis-section">
+                    <h3>二、经营数据概览</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="metric-card" style="border-top-color: #3b82f6;">
+                            <div class="metric-label">月营业额</div>
+                            <div class="metric-value" style="font-size: 20px; color: #3b82f6;">¥${formatNumber(data.monthly_revenue)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                行业平均: ¥${formatNumber(Math.round(benchmark.revenue_per_sqm * (data.store_area || 100)))}
+                            </div>
+                        </div>
+                        <div class="metric-card" style="border-top-color: #10b981;">
+                            <div class="metric-label">预估月毛利</div>
+                            <div class="metric-value" style="font-size: 20px; color: #10b981;">¥${formatNumber(grossProfit)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                毛利率: ${(kpi.gross_margin * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                        <div class="metric-card" style="border-top-color: #f59e0b;">
+                            <div class="metric-label">月总成本</div>
+                            <div class="metric-value" style="font-size: 20px; color: #f59e0b;">¥${formatNumber(totalCost)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                成本率: ${costRate.toFixed(1)}%
+                            </div>
+                        </div>
+                        <div class="metric-card" style="border-top-color: #8b5cf6;">
+                            <div class="metric-label">月客流量</div>
+                            <div class="metric-value" style="font-size: 20px; color: #8b5cf6;">${formatNumber(data.total_customers)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                日均: ${Math.round((data.total_customers || 0) / 30)}人
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 行业对比分析
+            html += `
+                <div class="diagnosis-section">
+                    <h3>三、行业对比分析 (${data.business_type})</h3>
+                    <table class="health-table">
+                        <thead>
+                            <tr>
+                                <th>对比指标</th>
+                                <th>您的门店</th>
+                                <th>行业标准</th>
+                                <th>差距分析</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>翻台率</td>
+                                <td><strong>${kpi.table_turnover.toFixed(1)}次/天</strong></td>
+                                <td>${benchmark.table_turnover}次/天</td>
+                                <td class="${kpi.table_turnover >= benchmark.table_turnover ? 'status-healthy' : 'status-warning'}">
+                                    ${kpi.table_turnover >= benchmark.table_turnover ? '达标 ✓' : '低于标准 ' + ((benchmark.table_turnover - kpi.table_turnover).toFixed(1)) + '次'}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>毛利率</td>
+                                <td><strong>${(kpi.gross_margin * 100).toFixed(1)}%</strong></td>
+                                <td>${(benchmark.gross_margin * 100).toFixed(1)}%</td>
+                                <td class="${kpi.gross_margin >= benchmark.gross_margin ? 'status-healthy' : 'status-warning'}">
+                                    ${kpi.gross_margin >= benchmark.gross_margin ? '达标 ✓' : '低于标准 ' + ((benchmark.gross_margin - kpi.gross_margin) * 100).toFixed(1) + '%'}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>坪效</td>
+                                <td><strong>¥${Math.round(kpi.revenue_per_sqm)}/㎡</strong></td>
+                                <td>¥${benchmark.revenue_per_sqm}/㎡</td>
+                                <td class="${kpi.revenue_per_sqm >= benchmark.revenue_per_sqm ? 'status-healthy' : 'status-warning'}">
+                                    ${kpi.revenue_per_sqm >= benchmark.revenue_per_sqm ? '达标 ✓' : '低于标准 ¥' + Math.round(benchmark.revenue_per_sqm - kpi.revenue_per_sqm)}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>客单价</td>
+                                <td><strong>¥${Math.round(kpi.avg_spending)}</strong></td>
+                                <td>¥${benchmark.avg_spending || 50}</td>
+                                <td class="${kpi.avg_spending >= (benchmark.avg_spending || 50) ? 'status-healthy' : 'status-warning'}">
+                                    ${kpi.avg_spending >= (benchmark.avg_spending || 50) ? '达标 ✓' : '低于标准 ¥' + Math.round((benchmark.avg_spending || 50) - kpi.avg_spending)}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>线上占比</td>
+                                <td><strong>${(kpi.takeaway_ratio * 100).toFixed(1)}%</strong></td>
+                                <td>${(benchmark.takeaway_ratio * 100).toFixed(1)}%</td>
+                                <td class="${Math.abs(kpi.takeaway_ratio - benchmark.takeaway_ratio) < 0.1 ? 'status-healthy' : 'status-warning'}">
+                                    ${Math.abs(kpi.takeaway_ratio - benchmark.takeaway_ratio) < 0.1 ? '合理范围 ✓' : kpi.takeaway_ratio > benchmark.takeaway_ratio ? '高于标准' : '低于标准'}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="info-card" style="margin-top: 15px; background: #f0f9ff; border-left-color: #3b82f6;">
+                        <p style="font-size: 13px; line-height: 1.6;">
+                            <strong>分析:</strong> 
+                            ${kpi.table_turnover < benchmark.table_turnover ? '翻台率偏低，建议优化出餐速度和服务流程。' : ''}
+                            ${kpi.gross_margin < benchmark.gross_margin ? '毛利率低于行业水平，需关注成本控制。' : ''}
+                            ${kpi.revenue_per_sqm < benchmark.revenue_per_sqm ? '坪效不足，可考虑提升客流或优化空间利用。' : ''}
+                            ${kpi.table_turnover >= benchmark.table_turnover && kpi.gross_margin >= benchmark.gross_margin && kpi.revenue_per_sqm >= benchmark.revenue_per_sqm ? '主要指标均达到或超过行业标准，继续保持！' : ''}
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            // 门店基本信息
+            html += `
+                <div class="diagnosis-section">
+                    <h3>四、门店基本信息</h3>
+                    <div class="store-info-grid">
+                        <div class="store-info-item"><label>门店名称</label><value>${data.store_name}</value></div>
+                        <div class="store-info-item"><label>业态类型</label><value>${data.business_type}</value></div>
+                        <div class="store-info-item"><label>门店面积</label><value>${data.store_area}㎡</value></div>
+                        <div class="store-info-item"><label>商圈情况</label><value>${data.business_circle}</value></div>
+                        <div class="store-info-item"><label>装修档次</label><value>${data.decoration_level}</value></div>
+                        <div class="store-info-item"><label>月营收</label><value>¥${formatNumber(data.monthly_revenue)}</value></div>
+                        <div class="store-info-item"><label>座位数</label><value>${data.seats}个</value></div>
+                        <div class="store-info-item"><label>日均客流</label><value>${data.daily_customers}人</value></div>
+                    </div>
+                </div>
+            `;
+
+            // 详细成本结构分析
+            const totalCostCalc = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + (data.marketing_cost || 0) + (data.utility_cost || 0);
+            html += `
+                <div class="diagnosis-section">
+                    <h3>五、成本结构深度分析</h3>
+                    
+                    <!-- 成本表格 -->
+                    <div style="margin-bottom: 20px;">
+                        <table class="health-table">
+                            <thead>
+                                <tr>
+                                    <th>成本项目</th>
+                                    <th>金额</th>
+                                    <th>占营收比</th>
+                                    <th>健康值</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>食材成本</td>
+                                    <td>¥${formatNumber(data.food_cost)}</td>
+                                    <td><strong>${(kpi.food_cost_ratio * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.food_cost_ratio <= 0.35 ? 'status-healthy' : kpi.food_cost_ratio <= 0.40 ? 'status-warning' : 'status-danger'}">
+                                        ${kpi.food_cost_ratio <= 0.35 ? '健康' : kpi.food_cost_ratio <= 0.40 ? '偏高' : '过高'}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>人力成本</td>
+                                    <td>¥${formatNumber(data.labor_cost)}</td>
+                                    <td><strong>${(kpi.labor_cost_ratio * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.labor_cost_ratio <= 0.30 ? 'status-healthy' : kpi.labor_cost_ratio <= 0.35 ? 'status-warning' : 'status-danger'}">
+                                        ${kpi.labor_cost_ratio <= 0.30 ? '健康' : kpi.labor_cost_ratio <= 0.35 ? '偏高' : '过高'}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>租金成本</td>
+                                    <td>¥${formatNumber(data.rent_cost)}</td>
+                                    <td><strong>${(kpi.rent_cost_ratio * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.rent_cost_ratio <= 0.20 ? 'status-healthy' : kpi.rent_cost_ratio <= 0.25 ? 'status-warning' : 'status-danger'}">
+                                        ${kpi.rent_cost_ratio <= 0.20 ? '健康' : kpi.rent_cost_ratio <= 0.25 ? '偏高' : '过高'}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>营销成本</td>
+                                    <td>¥${formatNumber(data.marketing_cost)}</td>
+                                    <td><strong>${(kpi.marketing_cost_ratio * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.marketing_cost_ratio <= 0.10 ? 'status-healthy' : kpi.marketing_cost_ratio <= 0.15 ? 'status-warning' : 'status-danger'}">
+                                        ${kpi.marketing_cost_ratio <= 0.10 ? '健康' : kpi.marketing_cost_ratio <= 0.15 ? '偏高' : '过高'}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>水电气成本</td>
+                                    <td>¥${formatNumber(data.utility_cost)}</td>
+                                    <td><strong>${(kpi.utility_cost_ratio * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.utility_cost_ratio <= 0.05 ? 'status-healthy' : kpi.utility_cost_ratio <= 0.07 ? 'status-warning' : 'status-danger'}">
+                                        ${kpi.utility_cost_ratio <= 0.05 ? '健康' : kpi.utility_cost_ratio <= 0.07 ? '偏高' : '过高'}
+                                    </td>
+                                </tr>
+                                <tr style="background: #f0f9ff;">
+                                    <td><strong>总成本</strong></td>
+                                    <td><strong>¥${formatNumber(totalCostCalc)}</strong></td>
+                                    <td><strong>${((totalCostCalc / data.monthly_revenue) * 100).toFixed(1)}%</strong></td>
+                                    <td class="${kpi.gross_margin >= 0.55 ? 'status-healthy' : kpi.gross_margin >= 0.45 ? 'status-warning' : 'status-danger'}">
+                                        毛利${(kpi.gross_margin * 100).toFixed(1)}%
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 成本优化建议 -->
+                    <div class="info-card">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">💡 成本优化建议</h4>
+                        ${kpi.food_cost_ratio > 0.35 ? `
+                        <div style="margin: 12px 0; padding: 12px; background: #fef2f2; border-left: 3px solid #ef4444; border-radius: 4px;">
+                            <strong>食材成本偏高:</strong>
+                            <ul style="margin: 8px 0 0 20px; font-size: 13px; line-height: 1.8;">
+                                <li>建立标准化配方,严格控制出品份量</li>
+                                <li>优化采购渠道,寻求批量议价</li>
+                                <li>降低损耗率,改进库存管理</li>
+                                <li>预计可降低成本率3-5%,月节省¥${formatNumber(Math.round(data.monthly_revenue * 0.04))}</li>
+                            </ul>
+                        </div>
+                        ` : ''}
+                        ${kpi.labor_cost_ratio > 0.30 ? `
+                        <div style="margin: 12px 0; padding: 12px; background: #fef2f2; border-left: 3px solid #ef4444; border-radius: 4px;">
+                            <strong>人力成本偏高:</strong>
+                            <ul style="margin: 8px 0 0 20px; font-size: 13px; line-height: 1.8;">
+                                <li>优化排班,提高人效</li>
+                                <li>引入自助点餐等降本工具</li>
+                                <li>按高峰时段弹性配置人员</li>
+                                <li>预计可提升人效20%,月节省¥${formatNumber(Math.round(data.labor_cost * 0.15))}</li>
+                            </ul>
+                        </div>
+                        ` : ''}
+                        ${kpi.marketing_cost_ratio > 0.10 ? `
+                        <div style="margin: 12px 0; padding: 12px; background: #fef2f2; border-left: 3px solid #ef4444; border-radius: 4px;">
+                            <strong>营销成本偏高:</strong>
+                            <ul style="margin: 8px 0 0 20px; font-size: 13px; line-height: 1.8;">
+                                <li>优化投流策略,提高ROI</li>
+                                <li>建立私域流量,降低平台依赖</li>
+                                <li>加强内容营销,提升自然流量</li>
+                                <li>预计可降低获客成本25%,月节省¥${formatNumber(Math.round(data.marketing_cost * 0.25))}</li>
+                            </ul>
+                        </div>
+                        ` : ''}
+                        ${kpi.food_cost_ratio <= 0.35 && kpi.labor_cost_ratio <= 0.30 && kpi.marketing_cost_ratio <= 0.10 ? `
+                        <div style="padding: 12px; background: #f0fdf4; border-left: 3px solid #22c55e; border-radius: 4px;">
+                            <p style="color: #22c55e; font-weight: 600;">✓ 成本控制良好,继续保持!</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            // 客户分析
+            const customerLifetimeValue = kpi.avg_spending * (data.total_customers > 0 ? data.repeat_customers / data.total_customers * 12 : 0);
+            html += `
+                <div class="diagnosis-section">
+                    <h3>六、客户行为深度分析</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="metric-card" style="border-top-color: #6366f1;">
+                            <div class="metric-label">客单价</div>
+                            <div class="metric-value" style="font-size: 24px; color: #6366f1;">¥${Math.round(kpi.avg_spending)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                行业平均: ¥${benchmark.avg_spending || 50}
+                            </div>
+                        </div>
+                        <div class="metric-card" style="border-top-color: #ec4899;">
+                            <div class="metric-label">复购率</div>
+                            <div class="metric-value" style="font-size: 24px; color: #ec4899;">${(kpi.member_repurchase * 100).toFixed(1)}%</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                ${kpi.member_repurchase >= 0.25 ? '优秀水平' : kpi.member_repurchase >= 0.15 ? '合格水平' : '需提升'}
+                            </div>
+                        </div>
+                        <div class="metric-card" style="border-top-color: #14b8a6;">
+                            <div class="metric-label">客户终身价值(LTV)</div>
+                            <div class="metric-value" style="font-size: 24px; color: #14b8a6;">¥${Math.round(customerLifetimeValue)}</div>
+                            <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                预估年度贡献
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="info-card">
+                            <h4 style="font-weight: 600; margin-bottom: 10px;">📊 客流结构分析</h4>
+                            <table style="width: 100%; font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 6px 0;">月总客流:</td>
+                                    <td style="text-align: right;"><strong>${formatNumber(data.total_customers)}人</strong></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">新客户(估算):</td>
+                                    <td style="text-align: right;"><strong>${formatNumber(data.total_customers - data.repeat_customers)}人</strong></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">老客户:</td>
+                                    <td style="text-align: right;"><strong>${formatNumber(data.repeat_customers)}人</strong></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">新客占比:</td>
+                                    <td style="text-align: right;"><strong>${((1 - kpi.member_repurchase) * 100).toFixed(1)}%</strong></td>
+                                </tr>
+                                <tr style="border-top: 1px solid #e5e7eb;">
+                                    <td style="padding: 6px 0;">日均到店客流:</td>
+                                    <td style="text-align: right;"><strong>${data.daily_customers}人</strong></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">日均翻台率:</td>
+                                    <td style="text-align: right;"><strong>${kpi.table_turnover.toFixed(1)}次</strong></td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="info-card">
+                            <h4 style="font-weight: 600; margin-bottom: 10px;">💰 营收贡献分析</h4>
+                            <table style="width: 100%; font-size: 13px;">
+                                <tr>
+                                    <td style="padding: 6px 0;">堂食营收:</td>
+                                    <td style="text-align: right;"><strong>¥${formatNumber(data.monthly_revenue - data.online_revenue)}</strong></td>
+                                    <td style="text-align: right;">${((1 - kpi.takeaway_ratio) * 100).toFixed(1)}%</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">线上营收:</td>
+                                    <td style="text-align: right;"><strong>¥${formatNumber(data.online_revenue)}</strong></td>
+                                    <td style="text-align: right;">${(kpi.takeaway_ratio * 100).toFixed(1)}%</td>
+                                </tr>
+                                <tr style="border-top: 1px solid #e5e7eb;">
+                                    <td style="padding: 6px 0;">新客贡献(估):</td>
+                                    <td style="text-align: right;"><strong>¥${formatNumber(data.monthly_revenue * (1 - kpi.member_repurchase))}</strong></td>
+                                    <td style="text-align: right;">${((1 - kpi.member_repurchase) * 100).toFixed(1)}%</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px 0;">老客贡献(估):</td>
+                                    <td style="text-align: right;"><strong>¥${formatNumber(data.monthly_revenue * kpi.member_repurchase)}</strong></td>
+                                    <td style="text-align: right;">${(kpi.member_repurchase * 100).toFixed(1)}%</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card" style="margin-top: 12px; background: #eff6ff; border-left-color: #3b82f6;">
+                        <h4 style="font-weight: 600; margin-bottom: 8px;">💡 客户策略建议</h4>
+                        <ul style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.8;">
+                            ${kpi.member_repurchase < 0.25 ? '<li><strong>提升复购率:</strong> 建立会员体系,设计老客户专属优惠,预计可提升复购率至30%以上</li>' : ''}
+                            ${kpi.avg_spending < (benchmark.avg_spending || 50) ? '<li><strong>提升客单价:</strong> 优化菜单设计,推出套餐组合,预计可提升客单价15-20%</li>' : ''}
+                            ${data.daily_customers < data.seats * 2 ? '<li><strong>增加客流:</strong> 加强线上营销,优化高峰时段运营,预计可提升日客流20%</li>' : ''}
+                            <li><strong>客户生命周期管理:</strong> 当前LTV为¥${Math.round(customerLifetimeValue)},通过提升复购可使LTV增长50%以上</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            // 营销渠道分析
+            html += `
+                <div class="diagnosis-section">
+                    <h3>七、营销渠道效果分析</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">营销健康度评分</div>
+                                <div class="metric-value" style="font-size: 32px; color: #f59e0b;">${kpi.marketing_health_score}分</div>
+                                <div class="score-badge ${diagnosis.getScoreBadgeClass(kpi.marketing_health_score)}" style="margin-top: 8px;">
+                                    ${diagnosis.getScoreLabel(kpi.marketing_health_score)}
+                                </div>
+                            </div>
+                            <div class="info-card" style="margin-top: 12px;">
+                                <h4 style="font-weight: 600; margin-bottom: 8px;">线上平台表现</h4>
+                                <table style="width: 100%; font-size: 13px;">
+                                    <tr>
+                                        <td style="padding: 6px 0;">主营平台:</td>
+                                        <td style="text-align: right;"><strong>${data.main_platforms || '-'}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">平均评分:</td>
+                                        <td style="text-align: right;"><strong>${data.average_rating}分</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">月总评论:</td>
+                                        <td style="text-align: right;"><strong>${data.total_reviews}条</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">差评率:</td>
+                                        <td style="text-align: right;" class="${kpi.negative_comment_rate <= 0.05 ? '' : 'color: #ef4444;'}">
+                                            <strong>${(kpi.negative_comment_rate * 100).toFixed(1)}%</strong>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">内容营销指数</div>
+                                <div class="metric-value" style="font-size: 32px; color: #8b5cf6;">${kpi.content_marketing_index}分</div>
+                                <div class="score-badge ${diagnosis.getScoreBadgeClass(kpi.content_marketing_index)}" style="margin-top: 8px;">
+                                    ${diagnosis.getScoreLabel(kpi.content_marketing_index)}
+                                </div>
+                            </div>
+                            <div class="info-card" style="margin-top: 12px;">
+                                <h4 style="font-weight: 600; margin-bottom: 8px;">内容运营情况</h4>
+                                <table style="width: 100%; font-size: 13px;">
+                                    <tr>
+                                        <td style="padding: 6px 0;">短视频发布:</td>
+                                        <td style="text-align: right;"><strong>${data.short_video_count}条/月</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">直播场次:</td>
+                                        <td style="text-align: right;"><strong>${data.live_stream_count}次/月</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">运营方式:</td>
+                                        <td style="text-align: right;"><strong>${data.marketing_situation || '-'}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 6px 0;">营销投入:</td>
+                                        <td style="text-align: right;"><strong>¥${formatNumber(data.marketing_cost)}/月</strong></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card" style="margin-top: 12px; background: #fef3c7; border-left-color: #f59e0b;">
+                        <h4 style="font-weight: 600; margin-bottom: 8px;">📱 营销优化建议</h4>
+                        <div style="font-size: 13px; line-height: 1.8;">
+                            ${kpi.content_marketing_index < 60 ? `
+                            <div style="margin: 8px 0; padding: 10px; background: white; border-radius: 4px;">
+                                <strong>内容营销待加强:</strong>
+                                <ul style="margin: 8px 0 0 20px;">
+                                    ${data.short_video_count < 50 ? '<li>短视频月发布量建议增至50+条,提升线上曝光</li>' : ''}
+                                    ${data.live_stream_count < 15 ? '<li>增加直播频次至15+次/月,提升客户粘性</li>' : ''}
+                                    ${data.marketing_situation === '无' || data.marketing_situation === '老板运营' ? '<li>考虑组建专业运营团队或找专业代运营</li>' : ''}
+                                </ul>
+                            </div>
+                            ` : ''}
+                            ${kpi.negative_comment_rate > 0.05 ? `
+                            <div style="margin: 8px 0; padding: 10px; background: white; border-radius: 4px;">
+                                <strong>差评率偏高(${(kpi.negative_comment_rate * 100).toFixed(1)}%):</strong>
+                                <ul style="margin: 8px 0 0 20px;">
+                                    <li>服务问题占${(kpi.service_bad_review_rate * 100).toFixed(0)}%,建立服务SOP标准</li>
+                                    <li>口味问题占${(kpi.taste_bad_review_rate * 100).toFixed(0)}%,加强出品稳定性</li>
+                                    <li>建立差评应对机制,48小时内响应处理</li>
+                                </ul>
+                            </div>
+                            ` : ''}
+                            ${kpi.marketing_cost_ratio > 0.10 ? `
+                            <div style="margin: 8px 0; padding: 10px; background: white; border-radius: 4px;">
+                                <strong>营销ROI优化:</strong>
+                                <ul style="margin: 8px 0 0 20px;">
+                                    <li>当前营销成本占比${(kpi.marketing_cost_ratio * 100).toFixed(1)}%,建议控制在10%以内</li>
+                                    <li>加强私域流量建设,降低平台依赖,预计可节省30%获客成本</li>
+                                    <li>优化投放策略,关注ROI而非单纯曝光量</li>
+                                </ul>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 核心指标健康检查
+            html += `
+                <div class="diagnosis-section">
+                    <h3>八、核心指标健康检查</h3>
+                    <table class="health-table">
+                        <thead>
+                            <tr>
+                                <th>指标名称</th>
+                                <th>当前值</th>
+                                <th>健康状态</th>
+                                <th>详细说明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${Object.values(report.healthCheck).map(item => `
+                                <tr>
+                                    <td><strong>${item.name}</strong></td>
+                                    <td style="font-size: 15px;"><strong>${item.value}</strong></td>
+                                    <td class="${item.statusClass}">${item.status}</td>
+                                    <td style="font-size: 12px; line-height: 1.6;">${item.interpretation}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // 问题诊断分级
+            const urgentIssues = [];
+            const importantIssues = [];
+            const optimizationIssues = [];
+            
+            report.rootCauses.forEach(cause => {
+                if (cause.phenomenon.includes('过高') || cause.phenomenon.includes('过低')) {
+                    urgentIssues.push(cause);
+                } else if (cause.phenomenon.includes('偏高') || cause.phenomenon.includes('偏低')) {
+                    importantIssues.push(cause);
+                } else {
+                    optimizationIssues.push(cause);
+                }
+            });
+
+            html += `
+                <div class="diagnosis-section">
+                    <h3>九、问题诊断分级</h3>
+            `;
+
+            if (urgentIssues.length > 0) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #dc2626; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; margin-right: 10px; font-size: 12px;">紧急</span>
+                            需要立即处理的问题
+                        </h4>
+                        ${urgentIssues.map(cause => `
+                            <div class="info-card" style="border-left: 4px solid #dc2626; background: #fef2f2;">
+                                <h4 style="font-weight: 600; margin-bottom: 8px; color: #dc2626;">
+                                    <i class="fas fa-exclamation-triangle"></i> ${cause.phenomenon}
+                                </h4>
+                                <div style="font-size: 13px; line-height: 1.8;">
+                                    <p style="margin: 8px 0;"><strong>可能原因:</strong></p>
+                                    <ul style="margin: 0 0 8px 20px;">
+                                        ${cause.causes.map(c => `<li>${c}</li>`).join('')}
+                                    </ul>
+                                    <p style="color: #666;"><strong>数据支撑:</strong> ${cause.dataSupport}</p>
+                                    <p style="margin-top: 8px; padding: 8px; background: white; border-radius: 4px; border-left: 3px solid #dc2626;">
+                                        <strong>影响评估:</strong> 如不及时处理,可能导致月亏损增加¥${Math.round(data.monthly_revenue * 0.05)}-${Math.round(data.monthly_revenue * 0.10)}
+                                    </p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            if (importantIssues.length > 0) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #f59e0b; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; margin-right: 10px; font-size: 12px;">重要</span>
+                            需要尽快改进的问题
+                        </h4>
+                        ${importantIssues.map(cause => `
+                            <div class="info-card" style="border-left: 4px solid #f59e0b; background: #fffbeb;">
+                                <h4 style="font-weight: 600; margin-bottom: 8px; color: #f59e0b;">
+                                    <i class="fas fa-exclamation-circle"></i> ${cause.phenomenon}
+                                </h4>
+                                <div style="font-size: 13px; line-height: 1.8;">
+                                    <p style="margin: 8px 0;"><strong>可能原因:</strong></p>
+                                    <ul style="margin: 0 0 8px 20px;">
+                                        ${cause.causes.map(c => `<li>${c}</li>`).join('')}
+                                    </ul>
+                                    <p style="color: #666;"><strong>数据支撑:</strong> ${cause.dataSupport}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            if (optimizationIssues.length > 0) {
+                html += `
+                    <div style="margin-bottom: 20px;">
+                        <h4 style="color: #3b82f6; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="background: #3b82f6; color: white; padding: 4px 12px; border-radius: 4px; margin-right: 10px; font-size: 12px;">优化</span>
+                            可以进一步优化的方向
+                        </h4>
+                        ${optimizationIssues.map(cause => `
+                            <div class="info-card" style="border-left: 4px solid #3b82f6; background: #eff6ff;">
+                                <h4 style="font-weight: 600; margin-bottom: 8px; color: #3b82f6;">
+                                    <i class="fas fa-info-circle"></i> ${cause.phenomenon}
+                                </h4>
+                                <div style="font-size: 13px; line-height: 1.8;">
+                                    <p style="margin: 8px 0;"><strong>优化方向:</strong></p>
+                                    <ul style="margin: 0 0 8px 20px;">
+                                        ${cause.causes.map(c => `<li>${c}</li>`).join('')}
+                                    </ul>
+                                    <p style="color: #666;"><strong>数据支撑:</strong> ${cause.dataSupport}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            if (report.rootCauses.length === 0) {
+                html += `
+                    <div class="info-card" style="border-left-color: #22c55e; background: #f0fdf4;">
+                        <p style="color: #22c55e; font-weight: 600; text-align: center; padding: 20px;">
+                            <i class="fas fa-check-circle" style="font-size: 48px; display: block; margin-bottom: 10px;"></i>
+                            恭喜!未发现重大经营问题,请保持当前良好状态!
+                        </p>
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+
+            // 详细改进行动计划
+            if (report.actionPlans.length > 0) {
+                html += `
+                    <div class="diagnosis-section">
+                        <h3>十、详细改进行动计划</h3>
+                        <p style="color: #666; font-size: 14px; margin-bottom: 20px;">
+                            以下方案已按优先级和投入产出比排序,建议优先执行高优先级项目
+                        </p>
+                `;
+
+                report.actionPlans.forEach((plan, index) => {
+                    html += `
+                        <div style="margin: 20px 0; padding: 20px; background: white; border-radius: 8px; border: 2px solid #e5e7eb;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <h4 style="font-weight: 600; color: #1f2937; margin: 0;">
+                                    <span style="display: inline-block; width: 32px; height: 32px; line-height: 32px; text-align: center; background: #3b82f6; color: white; border-radius: 50%; margin-right: 10px; font-size: 16px;">
+                                        ${index + 1}
+                                    </span>
+                                    ${plan.problem}
+                                </h4>
+                                <span class="score-badge ${plan.priority === '高' ? 'score-poor' : plan.priority === '中' ? 'score-average' : 'score-good'}">
+                                    ${plan.priority}优先级
+                                </span>
+                            </div>
+                            
+                            ${plan.solutions.map((solution, sIndex) => `
+                                <div style="margin: 15px 0; padding: 15px; background: #f9fafb; border-left: 4px solid ${solution.priorityClass === 'priority-high' ? '#dc2626' : solution.priorityClass === 'priority-medium' ? '#f59e0b' : '#22c55e'}; border-radius: 4px;">
+                                    <h5 style="font-weight: 600; margin-bottom: 10px; color: #1f2937;">
+                                        方案${sIndex + 1}: ${solution.measure}
+                                    </h5>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3" style="margin: 12px 0;">
+                                        <div style="padding: 10px; background: white; border-radius: 4px;">
+                                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">💰 投入成本</div>
+                                            <div style="font-size: 15px; font-weight: 600; color: #dc2626;">${solution.cost}</div>
+                                        </div>
+                                        <div style="padding: 10px; background: white; border-radius: 4px;">
+                                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">📈 预期效果</div>
+                                            <div style="font-size: 15px; font-weight: 600; color: #22c55e;">${solution.effect}</div>
+                                        </div>
+                                        <div style="padding: 10px; background: white; border-radius: 4px;">
+                                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">⏱️ 见效周期</div>
+                                            <div style="font-size: 15px; font-weight: 600; color: #3b82f6;">${solution.timeline}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${sIndex === 0 ? `
+                                    <div style="margin-top: 12px; padding: 12px; background: #eff6ff; border-radius: 4px;">
+                                        <div style="font-weight: 600; margin-bottom: 8px; color: #1e40af;">
+                                            <i class="fas fa-tasks"></i> 实施步骤建议:
+                                        </div>
+                                        <ol style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.8;">
+                                            ${solution.measure.includes('培训') ? `
+                                            <li>第1周: 制定培训方案和考核标准</li>
+                                            <li>第2-3周: 组织员工培训,建立标准流程</li>
+                                            <li>第4周: 实施考核,跟进改进效果</li>
+                                            ` : solution.measure.includes('优化') || solution.measure.includes('调整') ? `
+                                            <li>第1周: 数据分析,制定优化方案</li>
+                                            <li>第2周: 小范围试点测试</li>
+                                            <li>第3-4周: 全面推广并持续优化</li>
+                                            ` : solution.measure.includes('建立') || solution.measure.includes('引入') ? `
+                                            <li>第1-2周: 系统/工具选型和采购</li>
+                                            <li>第3周: 部署实施和员工培训</li>
+                                            <li>第4周起: 正式运行并持续优化</li>
+                                            ` : `
+                                            <li>制定详细实施计划</li>
+                                            <li>分阶段推进执行</li>
+                                            <li>定期评估调整</li>
+                                            `}
+                                        </ol>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                });
+
+                html += `</div>`;
+            }
+
+            // 风险预警
+            const risks = [];
+            if (kpi.gross_margin < 0.45) risks.push({ level: 'high', title: '毛利率过低', desc: '当前毛利率仅' + (kpi.gross_margin * 100).toFixed(1) + '%,存在亏损风险' });
+            if (kpi.rent_cost_ratio > 0.25) risks.push({ level: 'high', title: '租金负担过重', desc: '租金占比' + (kpi.rent_cost_ratio * 100).toFixed(1) + '%,超出合理范围' });
+            if (kpi.negative_comment_rate > 0.10) risks.push({ level: 'medium', title: '差评率告急', desc: '差评率' + (kpi.negative_comment_rate * 100).toFixed(1) + '%,严重影响品牌形象' });
+            if (kpi.table_turnover < 2) risks.push({ level: 'medium', title: '翻台率极低', desc: '日均翻台' + kpi.table_turnover.toFixed(1) + '次,座位利用率不足' });
+            if (kpi.marketing_cost_ratio > 0.15) risks.push({ level: 'medium', title: '营销投入过度', desc: '营销成本' + (kpi.marketing_cost_ratio * 100).toFixed(1) + '%,ROI堪忧' });
+
+            if (risks.length > 0) {
+                html += `
+                    <div class="diagnosis-section">
+                        <h3>十一、风险预警</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            ${risks.map(risk => `
+                                <div class="info-card" style="border-left: 4px solid ${risk.level === 'high' ? '#dc2626' : '#f59e0b'}; background: ${risk.level === 'high' ? '#fef2f2' : '#fffbeb'};">
+                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                        <i class="fas fa-exclamation-triangle" style="color: ${risk.level === 'high' ? '#dc2626' : '#f59e0b'}; font-size: 20px; margin-right: 10px;"></i>
+                                        <h4 style="font-weight: 600; color: ${risk.level === 'high' ? '#dc2626' : '#f59e0b'}; margin: 0;">
+                                            ${risk.title}
+                                        </h4>
+                                    </div>
+                                    <p style="font-size: 13px; color: #666; line-height: 1.6; margin: 0;">
+                                        ${risk.desc}
+                                    </p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // 总结建议
+            html += `
+                <div class="diagnosis-section">
+                    <h3>十二、诊断总结与建议</h3>
+                    <div class="info-card" style="background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%); border: 2px solid #667eea; padding: 25px;">
+                        <h4 style="font-weight: 600; margin-bottom: 15px; font-size: 16px; color: #1f2937;">
+                            <i class="fas fa-clipboard-check" style="color: #667eea; margin-right: 8px;"></i>
+                            综合诊断结论
+                        </h4>
+                        <div style="font-size: 14px; line-height: 1.8; color: #374151;">
+                            <p style="margin-bottom: 12px;">
+                                <strong>${data.store_name}</strong>的总体健康评分为<strong style="color: #667eea; font-size: 18px;"> ${report.overallScore}分</strong>,
+                                ${report.overallScore >= 80 ? '表现优秀,整体经营状况良好。' : 
+                                  report.overallScore >= 70 ? '表现良好,部分指标仍有提升空间。' :
+                                  report.overallScore >= 60 ? '及格水平,需要重点改进部分经营环节。' : 
+                                  '存在较多问题,需要系统性改进。'}
+                            </p>
+                            
+                            <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                                <div style="font-weight: 600; margin-bottom: 10px; color: #1f2937;">📊 五维度表现:</div>
+                                <ul style="margin: 0; padding-left: 20px;">
+                                    <li>成本控制: ${report.dimensionScores.cost}分 - ${report.dimensionScores.cost >= 80 ? '优秀✓' : report.dimensionScores.cost >= 60 ? '良好' : '待改进⚠️'}</li>
+                                    <li>运营效率: ${report.dimensionScores.efficiency}分 - ${report.dimensionScores.efficiency >= 80 ? '优秀✓' : report.dimensionScores.efficiency >= 60 ? '良好' : '待改进⚠️'}</li>
+                                    <li>客户体验: ${report.dimensionScores.customer}分 - ${report.dimensionScores.customer >= 80 ? '优秀✓' : report.dimensionScores.customer >= 60 ? '良好' : '待改进⚠️'}</li>
+                                    <li>营销能力: ${report.dimensionScores.marketing}分 - ${report.dimensionScores.marketing >= 80 ? '优秀✓' : report.dimensionScores.marketing >= 60 ? '良好' : '待改进⚠️'}</li>
+                                    <li>选址匹配: ${report.dimensionScores.location}分 - ${report.dimensionScores.location >= 80 ? '优秀✓' : report.dimensionScores.location >= 60 ? '良好' : '待改进⚠️'}</li>
+                                </ul>
+                            </div>
+
+                            <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                                <div style="font-weight: 600; margin-bottom: 10px; color: #1f2937;">🎯 核心建议:</div>
+                                <ol style="margin: 0; padding-left: 20px;">
+                                    ${report.actionPlans.length > 0 ? `
+                                    <li style="margin: 8px 0;">
+                                        <strong>优先处理:</strong> ${report.actionPlans[0].problem},
+                                        预计投入${report.actionPlans[0].solutions[0].cost},
+                                        ${report.actionPlans[0].solutions[0].timeline}即可见效
+                                    </li>
+                                    ` : ''}
+                                    ${kpi.gross_margin < 0.55 ? `
+                                    <li style="margin: 8px 0;">
+                                        <strong>提升毛利:</strong> 通过成本优化和客单价提升,目标毛利率提升至55%以上,
+                                        预计月增收¥${Math.round(data.monthly_revenue * 0.1)}
+                                    </li>
+                                    ` : ''}
+                                    ${kpi.member_repurchase < 0.25 ? `
+                                    <li style="margin: 8px 0;">
+                                        <strong>提升复购:</strong> 建立会员体系和客户关系管理,目标复购率25%以上,
+                                        可提升月营收10-15%
+                                    </li>
+                                    ` : ''}
+                                    <li style="margin: 8px 0;">
+                                        <strong>持续优化:</strong> 建立月度经营分析制度,定期review核心指标,
+                                        及时发现问题并调整策略
+                                    </li>
+                                </ol>
+                            </div>
+
+                            <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                                <div style="font-weight: 600; margin-bottom: 10px; color: #92400e;">
+                                    <i class="fas fa-lightbulb" style="color: #f59e0b;"></i> 预期改进效果:
+                                </div>
+                                <p style="margin: 0; color: #78350f;">
+                                    按照以上建议系统性改进,预计<strong>1-3个月</strong>内可以看到明显效果:
+                                    ${report.overallScore < 60 ? '整体评分提升至70分以上,' : ''}
+                                    ${kpi.gross_margin < 0.55 ? '毛利率提升5-8%,' : ''}
+                                    月营收增长<strong>15-25%</strong>,
+                                    月净利润增加<strong>¥${Math.round(data.monthly_revenue * 0.15 * 0.5)}-¥${Math.round(data.monthly_revenue * 0.25 * 0.5)}</strong>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 下次诊断建议
+            html += `
+                <div class="diagnosis-section" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px dashed #3b82f6;">
+                    <h3 style="color: #1e40af;">💡 下次诊断建议</h3>
+                    <p style="font-size: 14px; line-height: 1.8; color: #1e40af;">
+                        建议<strong>1个月后</strong>进行下次诊断,对比本次报告数据,评估改进效果。
+                        重点关注指标: 
+                        ${kpi.gross_margin < 0.55 ? '毛利率、' : ''}
+                        ${kpi.table_turnover < 3 ? '翻台率、' : ''}
+                        ${kpi.negative_comment_rate > 0.05 ? '差评率、' : ''}
+                        ${kpi.member_repurchase < 0.25 ? '复购率、' : ''}
+                        客单价、月营收等。
+                    </p>
+                    <p style="font-size: 13px; color: #64748b; margin-top: 10px;">
+                        <i class="fas fa-info-circle"></i> 
+                        持续追踪经营数据,建立月度诊断机制,可以更及时发现问题并优化策略。
+                    </p>
+                </div>
+            `;
+
+            document.getElementById('diagnosisContent').innerHTML = html;
+        }
+
+        // 更新统计信息
         function updateStats() {
-            elements.totalCount.textContent = totalRecords.toLocaleString();
-            elements.currentCount.textContent = currentData.length;
+            totalCount.textContent = totalRecords.toLocaleString();
+            currentCount.textContent = currentData.length;
             
             if (currentData.length > 0) {
                 const latest = new Date(currentData[0].timestamp).toLocaleDateString();
-                elements.latestRecord.textContent = latest;
+                latestRecord.textContent = latest;
             }
         }
 
+        // 更新分页信息
         function updatePagination() {
             const totalPages = Math.ceil(totalRecords / limit);
-            elements.pageInfo.textContent = `页 ${currentPage} / ${totalPages}`;
+            pageInfo.textContent = `页 ${currentPage} / ${totalPages}`;
             
-            elements.prevPage.disabled = currentPage <= 1;
-            elements.nextPage.disabled = currentPage >= totalPages;
-        }
-
-        function updateRecordSelect() {
-            elements.recordSelect.innerHTML = '<option value="">请选择一条记录进行诊断</option>';
-            currentData.forEach(record => {
-                const option = document.createElement('option');
-                option.value = record.id;
-                option.textContent = `${record.store_name || '未命名'} - ${formatDate(record.timestamp)}`;
-                elements.recordSelect.appendChild(option);
-            });
-        }
-
-        function viewRecord(id) {
-            const record = currentData.find(r => r.id === id);
-            if (!record) return;
-
-            const details = `
-记录ID: ${record.id}
-提交时间: ${formatDate(record.timestamp)}
-
-基础信息:
-门店名称: ${record.store_name || '-'}
-业态类型: ${record.business_type || '-'}
-月营收: ${formatNumber(record.monthly_revenue)}
-食材成本: ${formatNumber(record.food_cost)}
-人力成本: ${formatNumber(record.labor_cost)}
-租金成本: ${formatNumber(record.rent_cost)}
-日均客流: ${record.daily_customers || '-'}
-座位数: ${record.seats || '-'}
-
-运营数据:
-线上营收: ${formatNumber(record.online_revenue)}
-营销费用: ${formatNumber(record.marketing_cost)}
-复购次数: ${record.repeat_purchases || '-'}
-总客流: ${record.total_customers || '-'}
-水电费: ${formatNumber(record.utility_cost)}
-
-体验数据:
-平均评分: ${record.average_rating || '-'}
-差评数: ${record.bad_reviews || '-'}
-总评论数: ${record.total_reviews || '-'}
-社媒提及: ${record.social_media_mentions || '-'}
-服务差评率: ${record.service_bad_review_rate || '-'}%
-口味差评率: ${record.taste_bad_review_rate || '-'}%
-
-技术信息:
-IP地址: ${record.ip || '-'}
-用户代理: ${record.user_agent || '-'}
-            `;
-
-            alert(details);
-        }
-
-        function selectForDiagnosis(id) {
-            const record = currentData.find(r => r.id === id);
-            if (!record) return;
-
-            // 切换到诊断页面
-            switchTab('diagnosis');
-            
-            // 切换到API数据源
-            document.querySelector('input[name="dataSource"][value="api"]').checked = true;
-            elements.apiDataSelector.classList.remove('hidden');
-            
-            // 选中该记录
-            elements.recordSelect.value = id;
-            selectedRecord = record;
-            
-            showNotification(`已选择记录: ${record.store_name || '未命名'}`);
+            prevPage.disabled = currentPage <= 1;
+            nextPage.disabled = currentPage >= totalPages;
         }
 
         // 下载CSV
         async function downloadCSV() {
-            const api = elements.apiUrl.value.trim();
-            const key = elements.adminKey.value.trim();
+            const api = apiUrl.value.trim();
+            const key = adminKey.value.trim();
 
             if (!api || !key) {
-                showNotification('请先配置API地址和管理员密钥', 'error');
+                alert('请先配置API地址和管理员密钥');
                 return;
             }
 
             try {
                 const response = await fetch(`${api}/api/export`, {
                     method: 'GET',
-                    headers: {
-                        'x-admin-key': key
-                    }
+                    headers: { 'x-admin-key': key }
                 });
 
                 if (response.ok) {
@@ -1208,334 +2154,51 @@ IP地址: ${record.ip || '-'}
                     a.click();
                     window.URL.revokeObjectURL(url);
                     document.body.removeChild(a);
-                    showNotification('CSV文件下载成功');
                 } else {
                     throw new Error(`HTTP ${response.status}`);
                 }
             } catch (error) {
-                showNotification('导出失败: ' + error.message, 'error');
+                alert('导出失败: ' + error.message);
             }
         }
 
         // 显示状态
         function showStatus(type, message) {
-            elements.statusText.textContent = message;
-            elements.statusDisplay.className = 'p-4 rounded-xl mb-6';
-            elements.statusIndicator.className = 'w-3 h-3 rounded-full mr-3';
+            statusText.textContent = message;
+            statusDisplay.className = 'p-3 rounded-lg mb-4';
+            statusIndicator.className = 'w-3 h-3 rounded-full mr-2';
 
             switch(type) {
                 case 'connected':
-                    elements.statusDisplay.classList.add('bg-green-100', 'text-green-800');
-                    elements.statusIndicator.classList.add('bg-green-500');
+                    statusDisplay.classList.add('bg-green-100', 'text-green-800');
+                    statusIndicator.classList.add('bg-green-500');
                     break;
                 case 'checking':
-                    elements.statusDisplay.classList.add('bg-yellow-100', 'text-yellow-800');
-                    elements.statusIndicator.classList.add('bg-yellow-500', 'animate-pulse');
+                    statusDisplay.classList.add('bg-yellow-100', 'text-yellow-800');
+                    statusIndicator.classList.add('bg-yellow-500', 'animate-pulse');
                     break;
                 case 'error':
-                    elements.statusDisplay.classList.add('bg-red-100', 'text-red-800');
-                    elements.statusIndicator.classList.add('bg-red-500');
+                    statusDisplay.classList.add('bg-red-100', 'text-red-800');
+                    statusIndicator.classList.add('bg-red-500');
                     break;
             }
-            elements.statusDisplay.classList.remove('hidden');
+            statusDisplay.classList.remove('hidden');
         }
 
         // 切换加载状态
         function toggleLoading(loading) {
-            const loadingElement = elements.loadData.querySelector('.loading');
-            const textElement = elements.loadData.querySelector('.load-text');
+            const loadingElement = loadData.querySelector('.loading');
+            const textElement = loadData.querySelector('.load-text');
             
             if (loading) {
                 loadingElement.classList.add('active');
                 textElement.style.display = 'none';
-                elements.loadData.disabled = true;
+                loadData.disabled = true;
             } else {
                 loadingElement.classList.remove('active');
                 textElement.style.display = 'flex';
-                elements.loadData.disabled = false;
+                loadData.disabled = false;
             }
-        }
-
-        // 诊断步骤导航
-        function showDiagnosisStep(step) {
-            // 隐藏所有步骤
-            document.querySelectorAll('.form-step').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.step').forEach(s => {
-                s.classList.remove('active', 'completed');
-                if (parseInt(s.dataset.step) < step) {
-                    s.classList.add('completed');
-                } else if (parseInt(s.dataset.step) === step) {
-                    s.classList.add('active');
-                }
-            });
-            
-            // 显示当前步骤
-            document.getElementById(`step${step}`).classList.add('active');
-            elements.currentStep.textContent = step;
-            
-            currentDiagnosisStep = step;
-        }
-
-        // 验证表单
-        function validateDiagnosisStep(step) {
-            const stepElement = document.getElementById(`step${step}`);
-            const inputs = stepElement.querySelectorAll('input[required], select[required]');
-            
-            for (let input of inputs) {
-                if (!input.value.trim()) {
-                    input.focus();
-                    showNotification('请填写所有必填项', 'error');
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        // 收集表单数据
-        function collectFormData() {
-            return {
-                门店名称: elements.storeName.value,
-                业态类型: elements.storeType.value,
-                营业收入: parseFloat(elements.revenue.value),
-                食材成本: parseFloat(elements.foodCost.value),
-                人力成本: parseFloat(elements.laborCost.value),
-                租金成本: parseFloat(elements.rentCost.value),
-                日均客流: parseFloat(elements.dailyCustomers.value),
-                座位数: parseFloat(elements.seats.value),
-                线上营收: parseFloat(elements.takeawayRevenue.value),
-                营销费用: parseFloat(elements.marketingCost.value),
-                老客户复购次数: parseFloat(elements.memberRepurchase.value),
-                总客流: parseFloat(elements.totalCustomers.value),
-                水电气成本: parseFloat(elements.energyCost.value),
-                各平台团购均评分: parseFloat(elements.reviewScore.value),
-                差评数: parseFloat(elements.negativeComments.value),
-                总评论数: parseFloat(elements.totalComments.value),
-                社交媒体提及量: parseFloat(elements.socialMentions.value),
-                服务差评占比: parseFloat(elements.serviceComplaints.value),
-                口味差评占比: parseFloat(elements.tasteComplaints.value)
-            };
-        }
-
-        // 载入选中记录
-        function loadSelectedRecord() {
-            const recordId = elements.recordSelect.value;
-            if (!recordId) {
-                showNotification('请先选择一条记录', 'error');
-                return;
-            }
-
-            const record = currentData.find(r => r.id == recordId);
-            if (!record) {
-                showNotification('记录不存在', 'error');
-                return;
-            }
-
-            // 填充表单数据
-            elements.storeName.value = record.store_name || '';
-            elements.storeType.value = record.business_type || '';
-            elements.revenue.value = record.monthly_revenue || '';
-            elements.foodCost.value = record.food_cost || '';
-            elements.laborCost.value = record.labor_cost || '';
-            elements.rentCost.value = record.rent_cost || '';
-            elements.dailyCustomers.value = record.daily_customers || '';
-            elements.seats.value = record.seats || '';
-            elements.takeawayRevenue.value = record.online_revenue || '';
-            elements.marketingCost.value = record.marketing_cost || '';
-            elements.memberRepurchase.value = record.repeat_purchases || '';
-            elements.totalCustomers.value = record.total_customers || '';
-            elements.energyCost.value = record.utility_cost || '';
-            elements.reviewScore.value = record.average_rating || '';
-            elements.negativeComments.value = record.bad_reviews || '';
-            elements.totalComments.value = record.total_reviews || '';
-            elements.socialMentions.value = record.social_media_mentions || '';
-            elements.serviceComplaints.value = record.service_bad_review_rate || '';
-            elements.tasteComplaints.value = record.taste_bad_review_rate || '';
-
-            selectedRecord = record;
-            showNotification('记录数据已载入表单');
-        }
-
-        // 渲染健康状态表
-        function renderHealthTable(healthCheck) {
-            const tbody = document.getElementById('healthTableBody');
-            tbody.innerHTML = '';
-            
-            for (const [key, item] of Object.entries(healthCheck)) {
-                const row = tbody.insertRow();
-                row.innerHTML = `
-                    <td>${item.name}</td>
-                    <td>${item.value}</td>
-                    <td class="${item.statusClass}">${item.status}</td>
-                    <td>${item.interpretation}</td>
-                `;
-            }
-        }
-
-        // 渲染雷达图
-        function renderRadarChart(inputData, healthCheck) {
-            const ctx = document.getElementById('radarChart').getContext('2d');
-            const storeType = inputData.业态类型;
-            const benchmark = diagnosis.industryBenchmarks[storeType] || diagnosis.industryBenchmarks['其他'];
-            
-            new Chart(ctx, {
-                type: 'radar',
-                data: {
-                    labels: ['毛利率', '翻台率', '线上占比', '评分表现', '成本控制'],
-                    datasets: [{
-                        label: '门店表现',
-                        data: [
-                            healthCheck.gross_margin.rawValue * 100,
-                            healthCheck.table_turnover.rawValue,
-                            healthCheck.takeaway_ratio.rawValue * 100,
-                            healthCheck.review_score.rawValue * 20,
-                            100 - (healthCheck.food_cost_ratio.rawValue + healthCheck.labor_cost_ratio.rawValue) * 100
-                        ],
-                        backgroundColor: 'rgba(52, 152, 219, 0.2)',
-                        borderColor: 'rgba(52, 152, 219, 1)',
-                        pointBackgroundColor: 'rgba(52, 152, 219, 1)'
-                    }, {
-                        label: '行业标杆',
-                        data: [
-                            benchmark.gross_margin * 100,
-                            benchmark.table_turnover,
-                            benchmark.takeaway_ratio * 100,
-                            80, // 4.0分对应80%
-                            75  // 行业平均成本控制水平
-                        ],
-                        backgroundColor: 'rgba(46, 204, 113, 0.2)',
-                        borderColor: 'rgba(46, 204, 113, 1)',
-                        pointBackgroundColor: 'rgba(46, 204, 113, 1)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        r: {
-                            beginAtZero: true,
-                            max: 100
-                        }
-                    }
-                }
-            });
-        }
-
-        // 渲染根因分析
-        function renderRootCauseAnalysis(rootCauses) {
-            const container = document.getElementById('rootCauseAnalysis');
-            if (rootCauses.length === 0) {
-                container.innerHTML = '<p>恭喜！暂未发现重大经营问题。</p>';
-                return;
-            }
-            
-            let html = '';
-            rootCauses.forEach((cause, index) => {
-                html += `
-                    <div style="margin-bottom: 20px; padding: 15px; background: white; border-radius: 4px; border-left: 4px solid #e74c3c;">
-                        <h4>${cause.phenomenon}</h4>
-                        <p><strong>可能原因：</strong></p>
-                        <ul>
-                            ${cause.causes.map(c => `<li>${c}</li>`).join('')}
-                        </ul>
-                        <p><strong>数据支撑：</strong>${cause.dataSupport}</p>
-                    </div>
-                `;
-            });
-            container.innerHTML = html;
-        }
-
-        // 渲染行动计划
-        function renderActionPlans(actionPlans) {
-            const container = document.getElementById('actionPlans');
-            let html = '';
-            
-            actionPlans.forEach((plan, index) => {
-                html += `<h4 style="margin-top: 20px;">${plan.problem}</h4>`;
-                plan.solutions.forEach((solution, sIndex) => {
-                    html += `
-                        <li class="${solution.priorityClass}">
-                            <strong>${solution.measure}</strong><br>
-                            <small>投入成本：${solution.cost} | 预期效果：${solution.effect} | 优先级：${solution.priority}</small>
-                        </li>
-                    `;
-                });
-            });
-            
-            container.innerHTML = html;
-            
-            // 关键建议
-            document.getElementById('keyRecommendation').innerHTML = `
-                <h4>核心建议</h4>
-                <p>基于数据分析，建议您优先关注<strong>服务质量提升</strong>和<strong>成本结构优化</strong>。
-                通过系统性改进，预计可在3个月内显著改善经营状况。</p>
-            `;
-        }
-
-        // 生成报告
-        function generateReport() {
-            const formData = collectFormData();
-            const report = diagnosis.diagnose(formData);
-            
-            // 显示加载动画
-            elements.loadingSection.classList.remove('hidden');
-            document.getElementById('step3').style.display = 'none';
-            
-            // 模拟处理时间
-            setTimeout(() => {
-                elements.loadingSection.classList.add('hidden');
-                
-                // 渲染各个部分
-                renderHealthTable(report.healthCheck);
-                renderRadarChart(formData, report.healthCheck);
-                renderRootCauseAnalysis(report.rootCauses);
-                renderActionPlans(report.actionPlans);
-                
-                // 显示报告
-                elements.reportContainer.classList.remove('hidden');
-                
-                // 生成下载链接
-                generateDownloadLink(formData, report);
-                
-                showNotification('诊断报告生成成功！');
-            }, 3000);
-        }
-
-        // 生成下载链接
-        function generateDownloadLink(formData, report) {
-            const reportHtml = elements.reportContainer.outerHTML;
-            const fullHtml = `
-                <!DOCTYPE html>
-                <html lang="zh-CN">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>${formData.门店名称} - 诊断报告</title>
-                    <style>
-                        body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
-                        .report-section { margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
-                        .health-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-                        .health-table th, .health-table td { border: 1px solid #ddd; padding: 12px 8px; text-align: left; }
-                        .health-table th { background-color: #3498db; color: white; }
-                        .status-healthy { background-color: #d4edda !important; color: #155724; }
-                        .status-warning { background-color: #fff3cd !important; color: #856404; }
-                        .status-danger { background-color: #f8d7da !important; color: #721c24; }
-                        .action-plans { list-style: none; padding: 0; }
-                        .action-plans li { background: white; margin: 10px 0; padding: 15px; border-left: 4px solid #3498db; border-radius: 4px; }
-                        .priority-high { border-left-color: #e74c3c; }
-                        .priority-medium { border-left-color: #f39c12; }
-                        .priority-low { border-left-color: #2ecc71; }
-                    </style>
-                </head>
-                <body>
-                    <h1>${formData.门店名称} - 诊断报告</h1>
-                    <p>生成时间：${new Date().toLocaleString()}</p>
-                    ${reportHtml}
-                </body>
-                </html>
-            `;
-            
-            const blob = new Blob([fullHtml], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            document.getElementById('downloadLink').href = url;
-            document.getElementById('downloadLink').download = `${formData.门店名称}_诊断报告_${new Date().toISOString().split('T')[0]}.html`;
         }
 
         // 格式化日期
@@ -1549,70 +2212,6 @@ IP地址: ${record.ip || '-'}
             if (num === null || num === undefined) return '-';
             return num.toLocaleString();
         }
-
-        // 事件监听器
-        elements.dataTab.addEventListener('click', () => switchTab('data'));
-        elements.diagnosisTab.addEventListener('click', () => switchTab('diagnosis'));
-        elements.loadData.addEventListener('click', loadSurveyData);
-        elements.exportCSV.addEventListener('click', downloadCSV);
-        elements.limitSelect.addEventListener('change', (e) => {
-            limit = parseInt(e.target.value);
-            currentPage = 1;
-            loadSurveyData();
-        });
-        elements.prevPage.addEventListener('click', () => {
-            if (currentPage > 1) {
-                currentPage--;
-                loadSurveyData();
-            }
-        });
-        elements.nextPage.addEventListener('click', () => {
-            currentPage++;
-            loadSurveyData();
-        });
-
-        // 诊断页面事件监听
-        elements.dataSourceRadios.forEach(radio => {
-            radio.addEventListener('change', function() {
-                if (this.value === 'api') {
-                    elements.apiDataSelector.classList.remove('hidden');
-                } else {
-                    elements.apiDataSelector.classList.add('hidden');
-                }
-            });
-        });
-
-        elements.loadSelectedRecord.addEventListener('click', loadSelectedRecord);
-
-        // 分步表单导航
-        document.getElementById('nextBtn1').addEventListener('click', () => {
-            if (validateDiagnosisStep(1)) {
-                showDiagnosisStep(2);
-            }
-        });
-
-        document.getElementById('prevBtn2').addEventListener('click', () => {
-            showDiagnosisStep(1);
-        });
-
-        document.getElementById('nextBtn2').addEventListener('click', () => {
-            if (validateDiagnosisStep(2)) {
-                showDiagnosisStep(3);
-            }
-        });
-
-        document.getElementById('prevBtn3').addEventListener('click', () => {
-            showDiagnosisStep(2);
-        });
-
-        elements.generateReport.addEventListener('click', () => {
-            if (validateDiagnosisStep(3)) {
-                generateReport();
-            }
-        });
-
-        // 初始化
-        showDiagnosisStep(1);
     </script>
 </body>
 </html>
