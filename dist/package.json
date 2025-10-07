@@ -1,0 +1,16 @@
+{
+  "name": "restaurant-survey-admin-optimized",
+  "version": "1.0.0",
+  "description": "Optimized Restaurant Survey Data Management & Diagnosis System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
