@@ -76,20 +76,25 @@ class RestaurantDiagnosisAdvanced {
             return this.cache.get(cacheKey);
         }
 
+        // 修复总成本计算 - 确保所有成本项都被正确计算
         const totalCost = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + 
                         (data.marketing_cost || 0) + (data.utility_cost || 0);
         
         // 计算员工数(根据人力成本和行业平均工资估算)
         const estimatedEmployees = Math.max(1, Math.round((data.labor_cost || 0) / 5000));
         
+        // 修复毛利率计算 - 确保分母不为0，并正确处理负数情况
+        const monthlyRevenue = data.monthly_revenue || 0;
+        const grossMargin = monthlyRevenue > 0 ? Math.max(0, 1 - (totalCost / monthlyRevenue)) : 0;
+        
         const kpi = {
-            // 基础成本率
-            food_cost_ratio: (data.food_cost || 0) / (data.monthly_revenue || 1),
-            labor_cost_ratio: (data.labor_cost || 0) / (data.monthly_revenue || 1),
-            rent_cost_ratio: (data.rent_cost || 0) / (data.monthly_revenue || 1),
-            marketing_cost_ratio: (data.marketing_cost || 0) / (data.monthly_revenue || 1),
-            utility_cost_ratio: (data.utility_cost || 0) / (data.monthly_revenue || 1),
-            gross_margin: 1 - (totalCost / (data.monthly_revenue || 1)),
+            // 基础成本率 - 添加安全检查
+            food_cost_ratio: monthlyRevenue > 0 ? (data.food_cost || 0) / monthlyRevenue : 0,
+            labor_cost_ratio: monthlyRevenue > 0 ? (data.labor_cost || 0) / monthlyRevenue : 0,
+            rent_cost_ratio: monthlyRevenue > 0 ? (data.rent_cost || 0) / monthlyRevenue : 0,
+            marketing_cost_ratio: monthlyRevenue > 0 ? (data.marketing_cost || 0) / monthlyRevenue : 0,
+            utility_cost_ratio: monthlyRevenue > 0 ? (data.utility_cost || 0) / monthlyRevenue : 0,
+            gross_margin: grossMargin,
             
             // 效率指标
             table_turnover: (data.daily_customers || 0) / (data.seats || 1),
@@ -121,7 +126,13 @@ class RestaurantDiagnosisAdvanced {
             marketing_health_score: this.calculateMarketingHealthScore(data),
             
             // 辅助数据
-            estimated_employees: estimatedEmployees
+            estimated_employees: estimatedEmployees,
+            
+            // 财务健康指标
+            ...this.calculateFinancialHealth(data, totalCost, monthlyRevenue),
+            
+            // 运营效率指标
+            ...this.calculateOperationalEfficiency(data, kpi)
         };
 
         // Cache the result
@@ -236,7 +247,44 @@ class RestaurantDiagnosisAdvanced {
                 </div>
 
                 <div class="diagnosis-section">
-                    <h3>二、成本结构深度分析</h3>
+                    <h3>二、财务健康深度分析</h3>
+                    
+                    <!-- 盈亏平衡点分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">💰 盈亏平衡点分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">盈亏平衡点营收</div>
+                                <div class="metric-value" style="font-size: 24px; color: #3b82f6;">¥${this.formatNumber(kpi.break_even_revenue || 0)}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    月营收需达到此金额才能保本
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">安全边际</div>
+                                <div class="metric-value" style="font-size: 24px; color: #10b981;">${((kpi.safety_margin || 0) * 100).toFixed(1)}%</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.safety_margin > 0.3 ? '健康' : kpi.safety_margin > 0.2 ? '一般' : '危险'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">现金流健康度</div>
+                                <div class="metric-value" style="font-size: 24px; color: #f59e0b;">${kpi.cash_flow_health_score || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.cash_flow_health_score > 80 ? '优秀' : kpi.cash_flow_health_score > 60 ? '良好' : '需改善'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                            <p><strong>财务健康建议:</strong></p>
+                            <p>• 固定成本: ¥${this.formatNumber(kpi.fixed_costs || 0)}/月</p>
+                            <p>• 变动成本率: ${((kpi.variable_cost_rate || 0) * 100).toFixed(1)}%</p>
+                            <p>• 边际贡献率: ${((kpi.contribution_margin_rate || 0) * 100).toFixed(1)}%</p>
+                            <p>• 投资回收期: ${kpi.simple_payback_period ? kpi.simple_payback_period.toFixed(1) : '∞'}年</p>
+                        </div>
+                    </div>
+
+                    <!-- 成本结构分析 -->
                     <div class="info-card">
                         <h4 style="font-weight: 600; margin-bottom: 10px;">📊 成本构成明细</h4>
                         <table class="health-table">
@@ -310,6 +358,96 @@ class RestaurantDiagnosisAdvanced {
 
                 <div class="diagnosis-section">
                     <h3>三、运营效率深度分析</h3>
+                    
+                    <!-- 时段效率分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">⏰ 时段效率分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">早餐档 (7-10点)</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">¥${Math.round(kpi.time_slot_efficiency?.breakfast?.revenue || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    效率: ${(kpi.time_slot_efficiency?.breakfast?.efficiency || 0).toFixed(2)}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">午餐档 (11-14点)</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">¥${Math.round(kpi.time_slot_efficiency?.lunch?.revenue || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    效率: ${(kpi.time_slot_efficiency?.lunch?.efficiency || 0).toFixed(2)}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">下午茶 (15-17点)</div>
+                                <div class="metric-value" style="font-size: 20px; color: #8b5cf6;">¥${Math.round(kpi.time_slot_efficiency?.afternoon?.revenue || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    效率: ${(kpi.time_slot_efficiency?.afternoon?.efficiency || 0).toFixed(2)}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #ef4444;">
+                                <div class="metric-label">晚餐档 (18-21点)</div>
+                                <div class="metric-value" style="font-size: 20px; color: #ef4444;">¥${Math.round(kpi.time_slot_efficiency?.dinner?.revenue || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    效率: ${(kpi.time_slot_efficiency?.dinner?.efficiency || 0).toFixed(2)}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 座位利用率分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">🪑 座位利用率分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #6366f1;">
+                                <div class="metric-label">当前利用率</div>
+                                <div class="metric-value" style="font-size: 24px; color: #6366f1;">${((kpi.seat_utilization || 0) * 100).toFixed(1)}%</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.seat_utilization > 0.7 ? '优秀' : kpi.seat_utilization > 0.5 ? '良好' : '需提升'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #ec4899;">
+                                <div class="metric-label">浪费率</div>
+                                <div class="metric-value" style="font-size: 24px; color: #ec4899;">${((kpi.seat_waste_rate || 0) * 100).toFixed(1)}%</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.seat_waste_rate < 0.3 ? '健康' : kpi.seat_waste_rate < 0.5 ? '一般' : '需优化'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #14b8a6;">
+                                <div class="metric-label">优化潜力</div>
+                                <div class="metric-value" style="font-size: 24px; color: #14b8a6;">${((kpi.seat_optimization_potential?.improvement || 0) * 100).toFixed(1)}%</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    预计可提升利用率
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 菜品组合优化 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">🍽️ 菜品组合优化</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                    <div class="metric-label">菜单健康指数</div>
+                                    <div class="metric-value" style="font-size: 24px; color: #8b5cf6;">${kpi.menu_health_index?.health_index || 0}分</div>
+                                    <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                        ${kpi.menu_health_index?.health_index > 80 ? '优秀' : kpi.menu_health_index?.health_index > 60 ? '良好' : '需优化'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                                    <p><strong>推荐菜品结构:</strong></p>
+                                    <p>• 明星菜品: ${((kpi.menu_health_index?.structure?.star_dishes || 0) * 100).toFixed(0)}%</p>
+                                    <p>• 潜力菜品: ${((kpi.menu_health_index?.structure?.potential_dishes || 0) * 100).toFixed(0)}%</p>
+                                    <p>• 引流菜品: ${((kpi.menu_health_index?.structure?.traffic_dishes || 0) * 100).toFixed(0)}%</p>
+                                    <p>• 建议菜品数: ${kpi.menu_health_index?.recommended_dish_count || 15}道</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 基础效率指标 -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div class="metric-card" style="border-top-color: #6366f1;">
                             <div class="metric-label">翻台率</div>
@@ -351,7 +489,107 @@ class RestaurantDiagnosisAdvanced {
                 </div>
 
                 <div class="diagnosis-section">
-                    <h3>四、客户体验深度分析</h3>
+                    <h3>四、客户价值深度分析</h3>
+                    
+                    <!-- 客户生命周期价值分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">👥 客户生命周期价值分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">基础LTV</div>
+                                <div class="metric-value" style="font-size: 20px; color: #3b82f6;">¥${Math.round(kpi.base_ltv || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    客户基础价值
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">利润LTV</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">¥${Math.round(kpi.profit_ltv || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    考虑毛利的价值
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">获客成本</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">¥${Math.round(kpi.customer_acquisition_cost || 0)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    单客获客成本
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">LTV/CAC比率</div>
+                                <div class="metric-value" style="font-size: 20px; color: #8b5cf6;">${(kpi.ltv_cac_ratio || 0).toFixed(1)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    ${kpi.ltv_cac_ratio > 5 ? '优秀' : kpi.ltv_cac_ratio > 3 ? '健康' : '需优化'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                            <p><strong>客户价值洞察:</strong></p>
+                            <p>• 客户寿命: ${(kpi.customer_lifespan || 0).toFixed(1)}年</p>
+                            <p>• 年购买频次: ${(kpi.annual_purchase_frequency || 0).toFixed(1)}次</p>
+                            <p>• 钻石客户价值: ¥${Math.round(kpi.customer_segmentation?.diamond || 0)}</p>
+                            <p>• 金牌客户价值: ¥${Math.round(kpi.customer_segmentation?.gold || 0)}</p>
+                        </div>
+                    </div>
+
+                    <!-- 客户流失预警 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">⚠️ 客户流失预警</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #ef4444;">
+                                <div class="metric-label">流失风险评分</div>
+                                <div class="metric-value" style="font-size: 24px; color: #ef4444;">${kpi.churn_risk_score || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.churn_risk_level === 'high' ? '高风险' : kpi.churn_risk_level === 'medium' ? '中风险' : '低风险'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">流失概率</div>
+                                <div class="metric-value" style="font-size: 24px; color: #f59e0b;">${((kpi.churn_probability || 0) * 100).toFixed(1)}%</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    客户流失可能性
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">挽留策略</div>
+                                <div class="metric-value" style="font-size: 16px; color: #10b981;">${kpi.retention_strategy || '正常维护'}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    建议采取的措施
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 客户满意度分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">😊 客户满意度分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">综合满意度</div>
+                                <div class="metric-value" style="font-size: 24px; color: #8b5cf6;">${kpi.overall_satisfaction || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.satisfaction_level || '需提升'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">NPS评分</div>
+                                <div class="metric-value" style="font-size: 24px; color: #3b82f6;">${kpi.nps_score || 0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.nps_score > 50 ? '优秀' : kpi.nps_score > 0 ? '良好' : '需改善'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">改进领域</div>
+                                <div class="metric-value" style="font-size: 16px; color: #f59e0b;">${(kpi.improvement_areas || []).join(', ') || '无'}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    需要重点关注的方面
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 基础客户指标 -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div class="metric-card" style="border-top-color: #6366f1;">
                             <div class="metric-label">客单价</div>
@@ -419,6 +657,88 @@ class RestaurantDiagnosisAdvanced {
 
                 <div class="diagnosis-section">
                     <h3>五、营销效果深度分析</h3>
+                    
+                    <!-- 营销ROI分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">📈 营销ROI多维评估</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">总营销ROI</div>
+                                <div class="metric-value" style="font-size: 20px; color: #3b82f6;">${(kpi.total_marketing_roi || 0).toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    ${kpi.total_marketing_roi > 3 ? '优秀' : kpi.total_marketing_roi > 1 ? '健康' : '需优化'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">平台投流ROI</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">${(kpi.channel_roi?.platform_advertising || 0).toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    平台广告效果
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">短视频ROI</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">${(kpi.channel_roi?.short_video || 0).toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    短视频营销效果
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">直播ROI</div>
+                                <div class="metric-value" style="font-size: 20px; color: #8b5cf6;">${(kpi.channel_roi?.live_streaming || 0).toFixed(2)}</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    直播营销效果
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                            <p><strong>营销效率洞察:</strong></p>
+                            <p>• 营销效率评分: ${kpi.marketing_efficiency_score || 0}分</p>
+                            <p>• 优惠活动ROI: ${(kpi.channel_roi?.promotions || 0).toFixed(2)}</p>
+                            <p>• 内容营销健康度: ${kpi.content_marketing_health?.content_health_index || 0}分</p>
+                        </div>
+                    </div>
+
+                    <!-- 内容营销分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">📱 内容营销效能分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">内容健康指数</div>
+                                <div class="metric-value" style="font-size: 24px; color: #3b82f6;">${kpi.content_marketing_health?.content_health_index || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.content_marketing_health?.content_health_index > 80 ? '优秀' : kpi.content_marketing_health?.content_health_index > 60 ? '良好' : '需提升'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">短视频频次得分</div>
+                                <div class="metric-value" style="font-size: 24px; color: #10b981;">${kpi.content_marketing_health?.video_frequency_score || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    发布频次评估
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">直播频次得分</div>
+                                <div class="metric-value" style="font-size: 24px; color: #f59e0b;">${kpi.content_marketing_health?.live_frequency_score || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    直播频次评估
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">团队得分</div>
+                                <div class="metric-value" style="font-size: 24px; color: #8b5cf6;">${kpi.content_marketing_health?.team_score || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    营销团队能力
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6; margin-top: 12px;">
+                            <p><strong>内容营销建议:</strong></p>
+                            <p>• ${(kpi.content_marketing_health?.improvement_suggestions || []).join(' • ')}</p>
+                        </div>
+                    </div>
+
+                    <!-- 基础营销指标 -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div class="metric-card" style="border-top-color: #f59e0b;">
                             <div class="metric-label">平均评分</div>
@@ -509,9 +829,158 @@ class RestaurantDiagnosisAdvanced {
                 </div>
 
                 <div class="diagnosis-section">
-                    <h3>六、风险预警与建议</h3>
+                    <h3>六、风险预警与战略分析</h3>
+                    
+                    <!-- 经营风险预警雷达 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">⚠️ 经营风险预警雷达</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div class="metric-card" style="border-top-color: #ef4444;">
+                                <div class="metric-label">综合风险指数</div>
+                                <div class="metric-value" style="font-size: 24px; color: #ef4444;">${kpi.overall_risk_index || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.risk_level || '需评估'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">盈利风险</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">${kpi.risk_factors?.profit_risk || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    毛利率风险
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">现金流风险</div>
+                                <div class="metric-value" style="font-size: 20px; color: #8b5cf6;">${kpi.risk_factors?.cash_flow_risk || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    资金周转风险
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">客户风险</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">${kpi.risk_factors?.customer_risk || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    客户流失风险
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6;">
+                            <p><strong>风险因素分析:</strong></p>
+                            <p>• 成本风险: ${kpi.risk_factors?.cost_risk || 0}分</p>
+                            <p>• 竞争风险: ${kpi.risk_factors?.competition_risk || 0}分</p>
+                            <p>• 口碑风险: ${kpi.risk_factors?.reputation_risk || 0}分</p>
+                            <p>• 人员风险: ${kpi.risk_factors?.staff_risk || 0}分</p>
+                            <p>• 市场风险: ${kpi.risk_factors?.market_risk || 0}分</p>
+                        </div>
+                    </div>
+
+                    <!-- 季节性波动预测 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">📅 季节性波动预测</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">当前季节系数</div>
+                                <div class="metric-value" style="font-size: 24px; color: #3b82f6;">${kpi.seasonal_risk?.current_seasonal_coefficient || 1.0}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.seasonal_risk?.current_seasonal_coefficient > 1.2 ? '旺季' : kpi.seasonal_risk?.current_seasonal_coefficient < 0.8 ? '淡季' : '平季'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">预测营收</div>
+                                <div class="metric-value" style="font-size: 24px; color: #10b981;">¥${this.formatNumber(kpi.seasonal_risk?.predicted_revenue || 0)}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    基于季节性的预测
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">淡季生存测试</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">${kpi.seasonal_risk?.seasonal_survival_test ? '通过' : '未通过'}</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.seasonal_risk?.seasonal_survival_test ? '可承受淡季' : '需储备资金'}
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6; margin-top: 12px;">
+                            <p><strong>季节性准备指数:</strong> ${kpi.seasonal_risk?.seasonal_preparation_index || 0}%</p>
+                            <p>• 指数 > 30%: 可适度扩张</p>
+                            <p>• 指数 0-30%: 需谨慎运营</p>
+                            <p>• 指数 < 0: 需提前储备资金</p>
+                        </div>
+                    </div>
+
+                    <!-- 同业对标竞争力分析 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">🏆 同业对标竞争力分析</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #8b5cf6;">
+                                <div class="metric-label">综合竞争力</div>
+                                <div class="metric-value" style="font-size: 24px; color: #8b5cf6;">${kpi.overall_competitiveness || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.competitiveness_rank || '需评估'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">成本效率</div>
+                                <div class="metric-value" style="font-size: 20px; color: #3b82f6;">${kpi.competitiveness_factors?.cost_efficiency || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    成本控制能力
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">运营效率</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">${kpi.competitiveness_factors?.operational_efficiency || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    运营管理水平
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6; margin-top: 12px;">
+                            <p><strong>竞争力分析:</strong></p>
+                            <p>• 盈利能力: ${kpi.competitiveness_factors?.profitability || 0}分</p>
+                            <p>• 客户表现: ${kpi.competitiveness_factors?.customer_performance || 0}分</p>
+                            <p>• 营销能力: ${kpi.competitiveness_factors?.marketing_capability || 0}分</p>
+                            <p>• 产品品质: ${kpi.competitiveness_factors?.product_quality || 0}分</p>
+                        </div>
+                    </div>
+
+                    <!-- 扩张可行性评估 -->
+                    <div class="info-card mb-6">
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">🚀 扩张可行性评估</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="metric-card" style="border-top-color: #3b82f6;">
+                                <div class="metric-label">扩张准备度</div>
+                                <div class="metric-value" style="font-size: 24px; color: #3b82f6;">${kpi.expansion_readiness || 0}分</div>
+                                <div style="font-size: 12px; color: #666; margin-top: 4px;">
+                                    ${kpi.expansion_recommendation || '需评估'}
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #10b981;">
+                                <div class="metric-label">投资回收期</div>
+                                <div class="metric-value" style="font-size: 20px; color: #10b981;">${kpi.payback_period ? kpi.payback_period.toFixed(1) : '∞'}年</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    预计回本时间
+                                </div>
+                            </div>
+                            <div class="metric-card" style="border-top-color: #f59e0b;">
+                                <div class="metric-label">财务准备</div>
+                                <div class="metric-value" style="font-size: 20px; color: #f59e0b;">${kpi.feasibility_factors?.financial_readiness || 0}分</div>
+                                <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                                    资金准备情况
+                                </div>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #666; line-height: 1.6; margin-top: 12px;">
+                            <p><strong>扩张准备分析:</strong></p>
+                            <p>• 盈利能力: ${kpi.feasibility_factors?.profitability || 0}分</p>
+                            <p>• 运营成熟度: ${kpi.feasibility_factors?.operational_maturity || 0}分</p>
+                            <p>• 团队准备: ${kpi.feasibility_factors?.team_readiness || 0}分</p>
+                            <p>• 品牌认知: ${kpi.feasibility_factors?.brand_recognition || 0}分</p>
+                        </div>
+                    </div>
+
+                    <!-- 传统风险预警 -->
                     <div class="info-card">
-                        <h4 style="font-weight: 600; margin-bottom: 10px;">⚠️ 经营风险预警</h4>
+                        <h4 style="font-weight: 600; margin-bottom: 10px;">⚠️ 传统经营风险预警</h4>
                         ${this.generateRiskWarning(kpi, data, benchmark)}
                     </div>
                     
@@ -1216,5 +1685,787 @@ class RestaurantDiagnosisAdvanced {
     formatNumber(num) {
         if (!num) return '0';
         return new Intl.NumberFormat('zh-CN').format(num);
+    }
+
+    // ==================== 财务健康类算法 ====================
+
+    // 1. 盈亏平衡点分析算法
+    calculateFinancialHealth(data, totalCost, monthlyRevenue) {
+        // 固定成本 = 租金成本 + 人力成本基数(70%) + 水电气成本基数(80%)
+        const fixedCosts = (data.rent_cost || 0) + 
+                          (data.labor_cost || 0) * 0.7 + 
+                          (data.utility_cost || 0) * 0.8;
+        
+        // 变动成本 = 食材成本 + 营销成本
+        const variableCosts = (data.food_cost || 0) + (data.marketing_cost || 0);
+        const variableCostRate = monthlyRevenue > 0 ? variableCosts / monthlyRevenue : 0;
+        
+        // 边际贡献率 = 1 - 变动成本率
+        const contributionMarginRate = Math.max(0, 1 - variableCostRate);
+        
+        // 盈亏平衡点营收 = 固定成本 / 边际贡献率
+        const breakEvenRevenue = contributionMarginRate > 0 ? fixedCosts / contributionMarginRate : 0;
+        
+        // 盈亏平衡点客流 = 盈亏平衡点营收 / 客单价
+        const avgSpending = (data.total_customers || 0) > 0 ? monthlyRevenue / (data.total_customers || 1) : 50;
+        const breakEvenCustomers = avgSpending > 0 ? breakEvenRevenue / avgSpending : 0;
+        
+        // 当前安全边际 = (当前营收 - 盈亏平衡点营收) / 当前营收
+        const safetyMargin = monthlyRevenue > 0 ? (monthlyRevenue - breakEvenRevenue) / monthlyRevenue : 0;
+        
+        // 现金流健康度
+        const operatingCashFlow = monthlyRevenue - totalCost;
+        const cashFlowCoverageRatio = fixedCosts > 0 ? operatingCashFlow / fixedCosts : 0;
+        
+        // 应急储备月数 = 假设储备金 / 月固定成本
+        const emergencyReserveMonths = 3; // 假设储备3个月
+        const emergencyReserve = fixedCosts * emergencyReserveMonths;
+        
+        // 现金流健康分数
+        const cashFlowHealthScore = Math.min(100, 
+            (cashFlowCoverageRatio >= 1.5 ? 40 : cashFlowCoverageRatio >= 1.0 ? 30 : 20) +
+            (emergencyReserve > 0 ? 30 : 0) +
+            (data.table_turnover || 0) >= 3 ? 30 : 20
+        );
+
+        return {
+            // 盈亏平衡点分析
+            fixed_costs: fixedCosts,
+            variable_costs: variableCosts,
+            variable_cost_rate: variableCostRate,
+            contribution_margin_rate: contributionMarginRate,
+            break_even_revenue: breakEvenRevenue,
+            break_even_customers: breakEvenCustomers,
+            safety_margin: safetyMargin,
+            
+            // 现金流健康度
+            operating_cash_flow: operatingCashFlow,
+            cash_flow_coverage_ratio: cashFlowCoverageRatio,
+            emergency_reserve: emergencyReserve,
+            emergency_reserve_months: emergencyReserveMonths,
+            cash_flow_health_score: cashFlowHealthScore,
+            
+            // 投资回报周期
+            monthly_net_profit: operatingCashFlow,
+            annual_net_profit: operatingCashFlow * 12,
+            initial_investment: this.estimateInitialInvestment(data),
+            simple_payback_period: this.calculateSimplePaybackPeriod(operatingCashFlow, data)
+        };
+    }
+
+    // 2. 现金流健康度评估
+    calculateCashFlowHealth(data, kpi) {
+        const fixedCosts = (data.rent_cost || 0) + (data.labor_cost || 0) * 0.7 + (data.utility_cost || 0) * 0.8;
+        const operatingCashFlow = (data.monthly_revenue || 0) - ((data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + (data.marketing_cost || 0) + (data.utility_cost || 0));
+        
+        return {
+            cash_flow_coverage: fixedCosts > 0 ? operatingCashFlow / fixedCosts : 0,
+            emergency_reserve_adequacy: this.calculateEmergencyReserveAdequacy(data, fixedCosts),
+            working_capital_turnover: this.calculateWorkingCapitalTurnover(data)
+        };
+    }
+
+    // 3. 投资回报周期预测
+    calculateSimplePaybackPeriod(monthlyNetProfit, data) {
+        const initialInvestment = this.estimateInitialInvestment(data);
+        if (monthlyNetProfit <= 0) return Infinity;
+        return initialInvestment / (monthlyNetProfit * 12);
+    }
+
+    estimateInitialInvestment(data) {
+        // 根据门店面积和装修档次估算初始投资
+        const area = data.store_area || 100;
+        const decorationLevel = data.decoration_level || '中档';
+        
+        const decorationCostPerSqm = {
+            '中高档': 2000,
+            '中档': 1500,
+            '中低档': 1000
+        };
+        
+        const decorationCost = area * (decorationCostPerSqm[decorationLevel] || 1500);
+        const equipmentCost = area * 800; // 设备成本
+        const depositCost = (data.rent_cost || 0) * 3; // 押金
+        const inventoryCost = (data.food_cost || 0) * 0.5; // 备货成本
+        
+        return decorationCost + equipmentCost + depositCost + inventoryCost;
+    }
+
+    // ==================== 运营效率类算法 ====================
+
+    // 4. 时段效率分析模型
+    calculateOperationalEfficiency(data, kpi) {
+        // 时段分布（基于行业经验）
+        const timeSlotDistribution = {
+            breakfast: 0.15,    // 早餐档 (7-10点)
+            lunch: 0.40,        // 午餐档 (11-14点)
+            afternoon: 0.10,    // 下午茶 (15-17点)
+            dinner: 0.35        // 晚餐档 (18-21点)
+        };
+
+        const monthlyRevenue = data.monthly_revenue || 0;
+        const laborCost = data.labor_cost || 0;
+        const rentCost = data.rent_cost || 0;
+        const storeArea = data.store_area || 1;
+
+        // 各时段效率分析
+        const timeSlotEfficiency = {};
+        Object.keys(timeSlotDistribution).forEach(slot => {
+            const slotRevenue = monthlyRevenue * timeSlotDistribution[slot];
+            const slotLaborCost = laborCost * timeSlotDistribution[slot];
+            const slotRentCost = rentCost * timeSlotDistribution[slot];
+            
+            timeSlotEfficiency[slot] = {
+                revenue: slotRevenue,
+                efficiency: slotLaborCost + slotRentCost > 0 ? slotRevenue / (slotLaborCost + slotRentCost) : 0,
+                revenue_per_sqm: slotRevenue / storeArea,
+                revenue_per_hour: slotRevenue / (slot === 'breakfast' ? 3 : slot === 'lunch' ? 3 : slot === 'afternoon' ? 2 : 3)
+            };
+        });
+
+        // 座位利用率分析
+        const seats = data.seats || 1;
+        const dailyCustomers = data.daily_customers || 0;
+        const tableTurnover = kpi.table_turnover || 0;
+        
+        const seatUtilization = (dailyCustomers * 30) / (seats * tableTurnover * 30);
+        const seatWasteRate = Math.max(0, 1 - seatUtilization);
+
+        // 菜品组合优化分析
+        const menuHealthIndex = this.calculateMenuHealthIndex(data);
+
+        return {
+            time_slot_efficiency: timeSlotEfficiency,
+            seat_utilization: seatUtilization,
+            seat_waste_rate: seatWasteRate,
+            menu_health_index: menuHealthIndex,
+            operational_efficiency_score: this.calculateOperationalEfficiencyScore(timeSlotEfficiency, seatUtilization, menuHealthIndex)
+        };
+    }
+
+    // 5. 座位利用率优化算法
+    calculateSeatUtilization(data, kpi) {
+        const seats = data.seats || 1;
+        const dailyCustomers = data.daily_customers || 0;
+        const tableTurnover = kpi.table_turnover || 0;
+        
+        return {
+            current_utilization: (dailyCustomers * 30) / (seats * tableTurnover * 30),
+            theoretical_max: seats * 4 * 12 * 30, // 假设理想翻台率4次，营业12小时
+            optimization_potential: this.calculateSeatOptimizationPotential(data, seats)
+        };
+    }
+
+    // 6. 菜品组合优化模型
+    calculateMenuHealthIndex(data) {
+        // 基于行业经验估算菜品结构
+        const estimatedMenuStructure = {
+            star_dishes: 0.35,      // 明星菜品占比
+            potential_dishes: 0.25, // 潜力菜品占比
+            traffic_dishes: 0.25,   // 引流菜品占比
+            eliminate_dishes: 0.15  // 淘汰菜品占比
+        };
+
+        const menuHealthScore = (
+            estimatedMenuStructure.star_dishes * 40 +
+            estimatedMenuStructure.potential_dishes * 30 +
+            estimatedMenuStructure.traffic_dishes * 20 -
+            estimatedMenuStructure.eliminate_dishes * 10
+        );
+
+        return {
+            structure: estimatedMenuStructure,
+            health_index: menuHealthScore,
+            recommended_dish_count: Math.max(15, Math.floor((data.store_area || 100) / 20) + 15)
+        };
+    }
+
+    // ==================== 客户价值类算法 ====================
+
+    // 7. 客户生命周期价值(LTV)模型
+    calculateCustomerValue(data, kpi) {
+        const avgSpending = kpi.avg_spending || 50;
+        const repurchaseRate = kpi.member_repurchase || 0.25;
+        const monthlyChurnRate = 1 - repurchaseRate;
+        const annualChurnRate = 1 - Math.pow(repurchaseRate, 12);
+        
+        // 年购买频次 = (复购率 × 12) / (1 - 复购率)
+        const annualPurchaseFrequency = repurchaseRate > 0 ? (repurchaseRate * 12) / (1 - repurchaseRate) : 0;
+        
+        // 客户寿命(年) = 1 / 年流失率
+        const customerLifespan = annualChurnRate > 0 ? 1 / annualChurnRate : 0;
+        
+        // 基础LTV = 客单价 × 年购买频次 × 客户寿命
+        const baseLTV = avgSpending * annualPurchaseFrequency * customerLifespan;
+        
+        // 考虑利润的LTV = 基础LTV × 毛利率
+        const profitLTV = baseLTV * (kpi.gross_margin || 0.55);
+        
+        // 新客获客成本
+        const monthlyNewCustomers = (data.total_customers || 0) * 0.3; // 假设30%是新客
+        const customerAcquisitionCost = monthlyNewCustomers > 0 ? (data.marketing_cost || 0) / monthlyNewCustomers : 0;
+        
+        // LTV/CAC比率
+        const ltvCacRatio = customerAcquisitionCost > 0 ? profitLTV / customerAcquisitionCost : 0;
+
+        return {
+            base_ltv: baseLTV,
+            profit_ltv: profitLTV,
+            customer_lifespan: customerLifespan,
+            annual_purchase_frequency: annualPurchaseFrequency,
+            customer_acquisition_cost: customerAcquisitionCost,
+            ltv_cac_ratio: ltvCacRatio,
+            customer_segmentation: this.calculateCustomerSegmentation(profitLTV, avgSpending)
+        };
+    }
+
+    // 8. 客户流失预警模型
+    calculateCustomerChurnRisk(data, kpi) {
+        // 基于现有数据估算流失风险
+        const lastVisitDays = 30; // 假设最后消费时间
+        const frequencyDecline = 0.1; // 假设频次下降10%
+        const spendingDecline = 0.05; // 假设客单价下降5%
+        const badReviewRate = kpi.negative_comment_rate || 0.05;
+
+        // 流失风险评分（0-100分）
+        let riskScore = 0;
+        
+        // 最近消费时间（35%权重）
+        if (lastVisitDays > 90) riskScore += 100;
+        else if (lastVisitDays > 60) riskScore += 80;
+        else if (lastVisitDays > 30) riskScore += 50;
+        else if (lastVisitDays > 15) riskScore += 20;
+        
+        // 消费频次下降（30%权重）
+        if (frequencyDecline > 0.6) riskScore += 100;
+        else if (frequencyDecline > 0.4) riskScore += 60;
+        else if (frequencyDecline > 0.2) riskScore += 30;
+        
+        // 客单价下降（20%权重）
+        if (spendingDecline > 0.4) riskScore += 100;
+        else if (spendingDecline > 0.2) riskScore += 50;
+        else if (spendingDecline > 0) riskScore += 20;
+        
+        // 差评记录（15%权重）
+        if (badReviewRate > 0.1) riskScore += 100;
+        else if (badReviewRate > 0.05) riskScore += 60;
+        else if (badReviewRate > 0) riskScore += 30;
+
+        return {
+            risk_score: riskScore,
+            risk_level: riskScore > 70 ? 'high' : riskScore > 40 ? 'medium' : 'low',
+            churn_probability: riskScore / 100,
+            retention_strategy: this.getRetentionStrategy(riskScore)
+        };
+    }
+
+    // 9. 客户满意度综合模型
+    calculateCustomerSatisfaction(data, kpi) {
+        const reviewScore = kpi.review_score || 0;
+        const badReviewRate = kpi.negative_comment_rate || 0;
+        const repurchaseRate = kpi.member_repurchase || 0;
+        
+        // 综合满意度 = 加权平均(各维度得分)
+        const satisfactionScore = (
+            (reviewScore / 5) * 30 +           // 评分维度（30%）
+            (1 - badReviewRate) * 25 +         // 差评维度（25%）
+            repurchaseRate * 100 * 4 * 25 +    // 复购维度（25%）
+            this.calculateNPS(data) * 20       // 推荐指数（20%）
+        );
+
+        return {
+            overall_satisfaction: satisfactionScore,
+            satisfaction_level: this.getSatisfactionLevel(satisfactionScore),
+            nps_score: this.calculateNPS(data),
+            improvement_areas: this.identifyImprovementAreas(kpi)
+        };
+    }
+
+    // ==================== 营销效果类算法 ====================
+
+    // 10. 营销ROI多维评估模型
+    calculateMarketingEffectiveness(data, kpi) {
+        const marketingCost = data.marketing_cost || 0;
+        const monthlyRevenue = data.monthly_revenue || 0;
+        const onlineRevenue = data.online_revenue || 0;
+        
+        // 总营销ROI
+        const totalMarketingROI = marketingCost > 0 ? (monthlyRevenue - marketingCost) / marketingCost : 0;
+        
+        // 各渠道ROI（基于行业经验分配）
+        const channelROI = {
+            platform_advertising: this.calculateChannelROI(marketingCost * 0.4, onlineRevenue * 0.6),
+            short_video: this.calculateChannelROI(marketingCost * 0.3, onlineRevenue * 0.25),
+            live_streaming: this.calculateChannelROI(marketingCost * 0.2, onlineRevenue * 0.1),
+            promotions: this.calculateChannelROI(marketingCost * 0.1, monthlyRevenue * 0.05)
+        };
+
+        return {
+            total_marketing_roi: totalMarketingROI,
+            channel_roi: channelROI,
+            marketing_efficiency_score: this.calculateMarketingEfficiencyScore(channelROI),
+            content_marketing_health: this.calculateContentMarketingHealth(data)
+        };
+    }
+
+    // 11. 内容营销效能指数
+    calculateContentMarketingHealth(data) {
+        const shortVideoCount = data.short_video_count || 0;
+        const liveStreamCount = data.live_stream_count || 0;
+        const marketingSituation = data.marketing_situation || '无';
+        
+        // 发布频次得分
+        const videoFrequencyScore = Math.min(100, (shortVideoCount / 60) * 100);
+        const liveFrequencyScore = Math.min(100, (liveStreamCount / 20) * 100);
+        
+        // 营销团队得分
+        const teamScore = {
+            '有自己团队': 100,
+            '找代运营': 80,
+            '老板运营': 60,
+            '无': 20
+        }[marketingSituation] || 20;
+        
+        const contentHealthIndex = (videoFrequencyScore * 0.4 + liveFrequencyScore * 0.3 + teamScore * 0.3);
+        
+        return {
+            content_health_index: contentHealthIndex,
+            video_frequency_score: videoFrequencyScore,
+            live_frequency_score: liveFrequencyScore,
+            team_score: teamScore,
+            improvement_suggestions: this.getContentMarketingSuggestions(contentHealthIndex)
+        };
+    }
+
+    // ==================== 风险预警类算法 ====================
+
+    // 12. 经营风险预警雷达模型
+    calculateRiskIndicators(data, kpi, totalCost, monthlyRevenue) {
+        const riskFactors = {
+            // 盈利风险（20%权重）
+            profit_risk: kpi.gross_margin < 0.45 ? 80 : kpi.gross_margin < 0.55 ? 50 : 20,
+            
+            // 现金流风险（20%权重）
+            cash_flow_risk: kpi.cash_flow_coverage_ratio < 1.0 ? 90 : kpi.cash_flow_coverage_ratio < 1.5 ? 50 : 20,
+            
+            // 成本风险（15%权重）
+            cost_risk: (totalCost / monthlyRevenue) > 0.85 ? 85 : (totalCost / monthlyRevenue) > 0.75 ? 55 : 25,
+            
+            // 客流风险（15%权重）
+            customer_risk: this.calculateCustomerRisk(data),
+            
+            // 竞争风险（10%权重）
+            competition_risk: this.calculateCompetitionRisk(data),
+            
+            // 口碑风险（10%权重）
+            reputation_risk: kpi.negative_comment_rate > 0.10 ? 85 : kpi.negative_comment_rate > 0.05 ? 55 : 25,
+            
+            // 人员风险（5%权重）
+            staff_risk: this.calculateStaffRisk(data),
+            
+            // 市场风险（5%权重）
+            market_risk: this.calculateMarketRisk(data)
+        };
+
+        const weights = {
+            profit_risk: 0.20,
+            cash_flow_risk: 0.20,
+            cost_risk: 0.15,
+            customer_risk: 0.15,
+            competition_risk: 0.10,
+            reputation_risk: 0.10,
+            staff_risk: 0.05,
+            market_risk: 0.05
+        };
+
+        // 综合风险指数
+        const overallRiskIndex = Object.keys(riskFactors).reduce((sum, key) => 
+            sum + (riskFactors[key] * weights[key]), 0
+        );
+
+        return {
+            risk_factors: riskFactors,
+            overall_risk_index: overallRiskIndex,
+            risk_level: this.getRiskLevel(overallRiskIndex),
+            risk_warnings: this.generateRiskWarnings(riskFactors),
+            seasonal_risk: this.calculateSeasonalRisk(data, monthlyRevenue)
+        };
+    }
+
+    // 13. 季节性波动预测模型
+    calculateSeasonalRisk(data, monthlyRevenue) {
+        const currentMonth = new Date().getMonth() + 1;
+        const seasonalCoefficients = {
+            1: 1.4,   // 春节
+            2: 0.75,  // 节后淡季
+            3: 0.95,
+            4: 1.05,
+            5: 1.25,  // 五一
+            6: 0.95,
+            7: 1.15,  // 暑假
+            8: 1.15,
+            9: 0.95,
+            10: 1.35, // 国庆
+            11: 0.95,
+            12: 1.05
+        };
+
+        const currentCoefficient = seasonalCoefficients[currentMonth] || 1.0;
+        const predictedRevenue = monthlyRevenue * currentCoefficient;
+        const fixedCosts = (data.rent_cost || 0) + (data.labor_cost || 0) * 0.7 + (data.utility_cost || 0) * 0.8;
+        
+        return {
+            current_seasonal_coefficient: currentCoefficient,
+            predicted_revenue: predictedRevenue,
+            seasonal_survival_test: predictedRevenue >= fixedCosts,
+            seasonal_preparation_index: fixedCosts > 0 ? ((predictedRevenue / fixedCosts) - 1) * 100 : 0
+        };
+    }
+
+    // ==================== 战略决策类算法 ====================
+
+    // 14. 同业对标竞争力分析
+    calculateCompetitiveAnalysis(data, kpi) {
+        const benchmark = this.industryBenchmarks[data.business_type] || this.industryBenchmarks['其他'];
+        
+        const competitivenessFactors = {
+            cost_efficiency: this.calculateCostEfficiencyScore(kpi, benchmark),
+            operational_efficiency: this.calculateOperationalEfficiencyScore(kpi, benchmark),
+            profitability: this.calculateProfitabilityScore(kpi, benchmark),
+            customer_performance: this.calculateCustomerPerformanceScore(kpi, benchmark),
+            marketing_capability: this.calculateMarketingCapabilityScore(kpi, data),
+            product_quality: this.calculateProductQualityScore(kpi, data)
+        };
+
+        const weights = {
+            cost_efficiency: 0.20,
+            operational_efficiency: 0.20,
+            profitability: 0.20,
+            customer_performance: 0.20,
+            marketing_capability: 0.10,
+            product_quality: 0.10
+        };
+
+        const overallCompetitiveness = Object.keys(competitivenessFactors).reduce((sum, key) => 
+            sum + (competitivenessFactors[key] * weights[key]), 0
+        );
+
+        return {
+            competitiveness_factors: competitivenessFactors,
+            overall_competitiveness: overallCompetitiveness,
+            competitiveness_rank: this.getCompetitivenessRank(overallCompetitiveness),
+            swot_analysis: this.performSWOTAnalysis(competitivenessFactors),
+            improvement_priorities: this.getImprovementPriorities(competitivenessFactors)
+        };
+    }
+
+    // 15. 扩张可行性评估模型
+    calculateExpansionFeasibility(data, kpi) {
+        const monthlyNetProfit = kpi.monthly_net_profit || 0;
+        const annualNetProfit = monthlyNetProfit * 12;
+        const initialInvestment = this.estimateInitialInvestment(data);
+        
+        const feasibilityFactors = {
+            // 财务准备（30%权重）
+            financial_readiness: this.calculateFinancialReadiness(data, initialInvestment),
+            
+            // 盈利能力（25%权重）
+            profitability: kpi.gross_margin >= 0.60 ? 100 : kpi.gross_margin >= 0.55 ? 80 : kpi.gross_margin >= 0.50 ? 60 : 40,
+            
+            // 运营成熟度（20%权重）
+            operational_maturity: this.calculateOperationalMaturity(data),
+            
+            // 团队准备（15%权重）
+            team_readiness: this.calculateTeamReadiness(data),
+            
+            // 品牌认知（10%权重）
+            brand_recognition: this.calculateBrandRecognition(data, kpi)
+        };
+
+        const weights = {
+            financial_readiness: 0.30,
+            profitability: 0.25,
+            operational_maturity: 0.20,
+            team_readiness: 0.15,
+            brand_recognition: 0.10
+        };
+
+        const expansionReadiness = Object.keys(feasibilityFactors).reduce((sum, key) => 
+            sum + (feasibilityFactors[key] * weights[key]), 0
+        );
+
+        return {
+            feasibility_factors: feasibilityFactors,
+            expansion_readiness: expansionReadiness,
+            expansion_recommendation: this.getExpansionRecommendation(expansionReadiness),
+            payback_period: initialInvestment > 0 && annualNetProfit > 0 ? initialInvestment / annualNetProfit : Infinity,
+            expansion_risks: this.assessExpansionRisks(data, kpi)
+        };
+    }
+
+    // ==================== 辅助计算方法 ====================
+
+    calculateCostEfficiencyScore(kpi, benchmark) {
+        const costRate = kpi.food_cost_ratio + kpi.labor_cost_ratio + kpi.rent_cost_ratio;
+        const benchmarkCostRate = 0.35 + 0.30 + 0.20; // 行业平均成本率
+        return Math.max(0, (1 - costRate / benchmarkCostRate) * 100);
+    }
+
+    calculateOperationalEfficiencyScore(kpi, benchmark) {
+        const turnoverScore = Math.min(100, (kpi.table_turnover / benchmark.table_turnover) * 100);
+        const sqmScore = Math.min(100, (kpi.revenue_per_sqm / benchmark.revenue_per_sqm) * 100);
+        return (turnoverScore + sqmScore) / 2;
+    }
+
+    calculateProfitabilityScore(kpi, benchmark) {
+        return Math.min(100, (kpi.gross_margin / benchmark.gross_margin) * 100);
+    }
+
+    calculateCustomerPerformanceScore(kpi, benchmark) {
+        const spendingScore = Math.min(100, (kpi.avg_spending / benchmark.avg_spending) * 100);
+        const repurchaseScore = Math.min(100, kpi.member_repurchase * 400);
+        const reviewScore = Math.min(100, (kpi.review_score / 5) * 100);
+        return (spendingScore + repurchaseScore + reviewScore) / 3;
+    }
+
+    calculateMarketingCapabilityScore(kpi, data) {
+        const contentScore = kpi.content_marketing_index || 0;
+        const onlineScore = Math.min(100, (kpi.takeaway_ratio || 0) * 200);
+        return (contentScore + onlineScore) / 2;
+    }
+
+    calculateProductQualityScore(kpi, data) {
+        const reviewScore = Math.min(100, (kpi.review_score / 5) * 100);
+        const badReviewScore = Math.max(0, 100 - (kpi.negative_comment_rate || 0) * 1000);
+        return (reviewScore + badReviewScore) / 2;
+    }
+
+    // 其他辅助方法
+    calculateChannelROI(cost, revenue) {
+        return cost > 0 ? (revenue - cost) / cost : 0;
+    }
+
+    calculateNPS(data) {
+        // 基于评分和复购率估算NPS
+        const reviewScore = data.average_rating || 0;
+        const repurchaseRate = data.repeat_customers / data.total_customers || 0;
+        return Math.max(-100, Math.min(100, (reviewScore - 3) * 20 + repurchaseRate * 50));
+    }
+
+    getSatisfactionLevel(score) {
+        if (score >= 90) return '优秀';
+        if (score >= 80) return '良好';
+        if (score >= 70) return '及格';
+        return '较差';
+    }
+
+    getRiskLevel(riskIndex) {
+        if (riskIndex >= 80) return '极高风险';
+        if (riskIndex >= 60) return '高风险';
+        if (riskIndex >= 40) return '中等风险';
+        if (riskIndex >= 20) return '低风险';
+        return '极低风险';
+    }
+
+    getCompetitivenessRank(score) {
+        if (score >= 85) return '行业领先(Top 10%)';
+        if (score >= 70) return '行业优秀(Top 30%)';
+        if (score >= 55) return '行业中等(Middle 40%)';
+        if (score >= 40) return '行业偏下(Bottom 30%)';
+        return '行业落后(Bottom 10%)';
+    }
+
+    getExpansionRecommendation(readiness) {
+        if (readiness >= 80) return '建议扩张';
+        if (readiness >= 60) return '谨慎扩张';
+        return '不建议扩张';
+    }
+
+    // 更多辅助方法...
+    calculateEmergencyReserveAdequacy(data, fixedCosts) {
+        const recommendedReserve = fixedCosts * 3; // 3个月固定成本
+        return {
+            recommended: recommendedReserve,
+            adequacy_ratio: data.cash_reserve ? data.cash_reserve / recommendedReserve : 0
+        };
+    }
+
+    calculateWorkingCapitalTurnover(data) {
+        const monthlyRevenue = data.monthly_revenue || 0;
+        const workingCapital = (data.food_cost || 0) * 0.5; // 假设50%的食材成本作为营运资金
+        return workingCapital > 0 ? monthlyRevenue / workingCapital : 0;
+    }
+
+    calculateCustomerSegmentation(ltv, avgSpending) {
+        const avgLTV = ltv;
+        return {
+            diamond: avgLTV * 3,
+            gold: avgLTV * 2,
+            silver: avgLTV * 1,
+            bronze: avgLTV * 0.5
+        };
+    }
+
+    getRetentionStrategy(riskScore) {
+        if (riskScore > 70) return '立即发放高价值券，店长亲自致电';
+        if (riskScore > 40) return '发送优惠信息，新品试吃邀请';
+        return '正常维护';
+    }
+
+    identifyImprovementAreas(kpi) {
+        const areas = [];
+        if (kpi.review_score < 4.0) areas.push('服务培训');
+        if (kpi.negative_comment_rate > 0.05) areas.push('质量管控');
+        if (kpi.member_repurchase < 0.15) areas.push('客户关系管理');
+        return areas;
+    }
+
+    calculateMarketingEfficiencyScore(channelROI) {
+        const avgROI = Object.values(channelROI).reduce((sum, roi) => sum + roi, 0) / Object.keys(channelROI).length;
+        return Math.min(100, avgROI * 20);
+    }
+
+    getContentMarketingSuggestions(healthIndex) {
+        if (healthIndex < 60) return ['增加发布频次', '提升内容质量', '建立专业团队'];
+        if (healthIndex < 80) return ['优化内容策略', '加强互动'];
+        return ['保持当前水平', '探索新形式'];
+    }
+
+    calculateCustomerRisk(data) {
+        const customerDecline = 0.1; // 假设客流下降10%
+        if (customerDecline > 0.2) return 80;
+        if (customerDecline > 0.1) return 50;
+        return 20;
+    }
+
+    calculateCompetitionRisk(data) {
+        // 基于商圈情况估算竞争风险
+        const businessCircle = data.business_circle || '';
+        if (businessCircle.includes('一类')) return 15;
+        if (businessCircle.includes('二类')) return 25;
+        return 45;
+    }
+
+    calculateStaffRisk(data) {
+        const turnoverRate = 0.2; // 假设20%年流失率
+        if (turnoverRate > 0.3) return 80;
+        if (turnoverRate > 0.15) return 50;
+        return 20;
+    }
+
+    calculateMarketRisk(data) {
+        const businessType = data.business_type || '';
+        const saturatedTypes = ['茶饮店', '咖啡厅'];
+        return saturatedTypes.includes(businessType) ? 70 : 25;
+    }
+
+    generateRiskWarnings(riskFactors) {
+        const warnings = [];
+        Object.keys(riskFactors).forEach(factor => {
+            if (riskFactors[factor] > 70) {
+                warnings.push({
+                    factor: factor,
+                    level: 'high',
+                    message: this.getRiskMessage(factor, riskFactors[factor])
+                });
+            }
+        });
+        return warnings;
+    }
+
+    getRiskMessage(factor, score) {
+        const messages = {
+            profit_risk: '毛利率过低，存在严重财务风险',
+            cash_flow_risk: '现金流紧张，需要关注资金状况',
+            cost_risk: '总成本率过高，盈利空间被压缩',
+            customer_risk: '客流下降，需要加强营销',
+            competition_risk: '竞争激烈，需要差异化定位',
+            reputation_risk: '口碑风险较高，需要改善服务',
+            staff_risk: '人员流失率高，需要加强管理',
+            market_risk: '市场饱和度高，需要创新突破'
+        };
+        return messages[factor] || '存在经营风险';
+    }
+
+    performSWOTAnalysis(factors) {
+        const strengths = [];
+        const weaknesses = [];
+        const opportunities = [];
+        const threats = [];
+
+        Object.keys(factors).forEach(factor => {
+            if (factors[factor] > 70) {
+                strengths.push(factor);
+            } else if (factors[factor] < 50) {
+                weaknesses.push(factor);
+            }
+        });
+
+        return { strengths, weaknesses, opportunities, threats };
+    }
+
+    getImprovementPriorities(factors) {
+        return Object.keys(factors)
+            .map(key => ({ factor: key, score: factors[key] }))
+            .sort((a, b) => a.score - b.score)
+            .slice(0, 3);
+    }
+
+    calculateFinancialReadiness(data, initialInvestment) {
+        const cashReserve = data.cash_reserve || 0;
+        const monthlyNetProfit = data.monthly_net_profit || 0;
+        const requiredReserve = initialInvestment + (monthlyNetProfit * 6);
+        
+        if (cashReserve >= requiredReserve) return 100;
+        if (cashReserve >= initialInvestment) return 70;
+        if (cashReserve >= initialInvestment * 0.5) return 40;
+        return 0;
+    }
+
+    calculateOperationalMaturity(data) {
+        const updateCount = data.update_count || 0;
+        if (updateCount > 20) return 100;
+        if (updateCount > 10) return 70;
+        if (updateCount > 5) return 40;
+        return 20;
+    }
+
+    calculateTeamReadiness(data) {
+        const hasManager = data.has_manager || false;
+        const teamSize = data.team_size || 0;
+        
+        if (hasManager && teamSize > 5) return 100;
+        if (hasManager || teamSize > 3) return 70;
+        if (teamSize > 1) return 40;
+        return 20;
+    }
+
+    calculateBrandRecognition(data, kpi) {
+        const reviewScore = kpi.review_score || 0;
+        const contentIndex = kpi.content_marketing_index || 0;
+        
+        if (reviewScore > 4.5 && contentIndex > 80) return 100;
+        if (reviewScore > 4.0 && contentIndex > 60) return 70;
+        if (reviewScore > 3.5 && contentIndex > 40) return 40;
+        return 20;
+    }
+
+    assessExpansionRisks(data, kpi) {
+        return {
+            financial_risk: kpi.gross_margin < 0.5 ? 'high' : 'medium',
+            management_risk: data.team_size < 3 ? 'high' : 'medium',
+            market_risk: data.business_circle?.includes('一类') ? 'low' : 'medium',
+            timing_risk: 'medium'
+        };
+    }
+
+    calculateSeatOptimizationPotential(data, seats) {
+        const currentUtilization = data.seat_utilization || 0.5;
+        const potentialUtilization = Math.min(1.0, currentUtilization * 1.5);
+        return {
+            current: currentUtilization,
+            potential: potentialUtilization,
+            improvement: potentialUtilization - currentUtilization
+        };
     }
 }
