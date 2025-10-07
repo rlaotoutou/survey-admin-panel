@@ -12,7 +12,7 @@ function minifyJS(code) {
         .replace(/\/\*[\s\S]*?\*\//g, '') // Remove block comments
         .replace(/\/\/.*$/gm, '') // Remove line comments
         .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-        .replace(/\s*([{}();,=+\-*/])\s*/g, '$1') // Remove spaces around operators
+        .replace(/\s*([{}();,=+*/])\s*/g, '$1') // Remove spaces around operators (excluding -)
         .replace(/;\s*}/g, '}') // Remove semicolons before closing braces
         .trim();
 }
@@ -21,7 +21,7 @@ function minifyCSS(css) {
     return css
         .replace(/\/\*[\s\S]*?\*\//g, '') // Remove comments
         .replace(/\s+/g, ' ') // Replace multiple spaces with single space
-        .replace(/\s*([{}:;,>+~])\s*/g, '$1') // Remove spaces around selectors
+        .replace(/\s*([{}:;,>+~])\s*/g, '$1') // Remove spaces around selectors (excluding -)
         .replace(/;\s*}/g, '}') // Remove semicolons before closing braces
         .trim();
 }
