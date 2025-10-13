@@ -87,58 +87,79 @@ class RestaurantDiagnosisAdvanced {
         const monthlyRevenue = data.monthly_revenue || 0;
         const grossMargin = monthlyRevenue > 0 ? Math.max(0, 1 - (totalCost / monthlyRevenue)) : 0;
         
-        const kpi = {
-            // 基础成本率 - 添加安全检查
-            food_cost_ratio: monthlyRevenue > 0 ? (data.food_cost || 0) / monthlyRevenue : 0,
-            labor_cost_ratio: monthlyRevenue > 0 ? (data.labor_cost || 0) / monthlyRevenue : 0,
-            rent_cost_ratio: monthlyRevenue > 0 ? (data.rent_cost || 0) / monthlyRevenue : 0,
-            marketing_cost_ratio: monthlyRevenue > 0 ? (data.marketing_cost || 0) / monthlyRevenue : 0,
-            utility_cost_ratio: monthlyRevenue > 0 ? (data.utility_cost || 0) / monthlyRevenue : 0,
-            gross_margin: grossMargin,
-            
-            // 效率指标
-            table_turnover: (data.daily_customers || 0) / (data.seats || 1),
-            revenue_per_sqm: (data.monthly_revenue || 0) / (data.store_area || 1),  // 坪效
-            revenue_per_employee: (data.monthly_revenue || 0) / estimatedEmployees,  // 人效
-            
-            // 客户指标
-            avg_spending: (data.monthly_revenue || 0) / (data.total_customers || 1),  // 客单价
-            member_repurchase: (data.repeat_customers || 0) / (data.total_customers || 1),
-            
-            // 线上指标
-            takeaway_ratio: (data.online_revenue || 0) / (data.monthly_revenue || 1),
-            review_score: data.average_rating || 0,
-            negative_comment_rate: (data.bad_reviews || 0) / (data.total_reviews || 1),
-            
-            // 内容营销指数(综合评分)
-            content_marketing_index: this.calculateContentMarketingIndex(data),
-            short_video_count: data.short_video_count || 0,
-            live_stream_count: data.live_stream_count || 0,
-            
-            // 差评分析
-            service_bad_review_rate: (data.service_bad_reviews || 0) / (data.bad_reviews || 1),
-            taste_bad_review_rate: (data.taste_bad_reviews || 0) / (data.bad_reviews || 1),
-            
-            // 选址匹配度
-            location_match_score: this.calculateLocationMatchScore(data),
-            
-            // 营销健康度
-            marketing_health_score: this.calculateMarketingHealthScore(data),
-            
-            // 辅助数据
-            estimated_employees: estimatedEmployees,
-            
-            // 财务健康指标
-            ...this.calculateFinancialHealth(data, totalCost, monthlyRevenue),
-            
-            // 运营效率指标
-            ...this.calculateOperationalEfficiency(data, kpi)
-        };
-
-        // Cache the result
-        this.cache.set(cacheKey, kpi);
-        return kpi;
+        calculateKPI(data) {
+    // Check cache first
+    const cacheKey = `kpi_${JSON.stringify(data)}`;
+    if (this.cache.has(cacheKey)) {
+        return this.cache.get(cacheKey);
     }
+
+    // 修复总成本计算 - 确保所有成本项都被正确计算
+    const totalCost = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + 
+                    (data.marketing_cost || 0) + (data.utility_cost || 0);
+    
+    // 计算员工数(根据人力成本和行业平均工资估算)
+    const estimatedEmployees = Math.max(1, Math.round((data.labor_cost || 0) / 5000));
+    
+    // 修复毛利率计算 - 确保分母不为0，并正确处理负数情况
+    const monthlyRevenue = data.monthly_revenue || 0;
+    const grossMargin = monthlyRevenue > 0 ? Math.max(0, 1 - (totalCost / monthlyRevenue)) : 0;
+    
+    // ✅ 第一步：先构建基础 kpi 对象（不包含依赖自身的计算）
+    const kpi = {
+        // 基础成本率 - 添加安全检查
+        food_cost_ratio: monthlyRevenue > 0 ? (data.food_cost || 0) / monthlyRevenue : 0,
+        labor_cost_ratio: monthlyRevenue > 0 ? (data.labor_cost || 0) / monthlyRevenue : 0,
+        rent_cost_ratio: monthlyRevenue > 0 ? (data.rent_cost || 0) / monthlyRevenue : 0,
+        marketing_cost_ratio: monthlyRevenue > 0 ? (data.marketing_cost || 0) / monthlyRevenue : 0,
+        utility_cost_ratio: monthlyRevenue > 0 ? (data.utility_cost || 0) / monthlyRevenue : 0,
+        gross_margin: grossMargin,
+        
+        // 效率指标
+        table_turnover: (data.daily_customers || 0) / (data.seats || 1),
+        revenue_per_sqm: (data.monthly_revenue || 0) / (data.store_area || 1),  // 坪效
+        revenue_per_employee: (data.monthly_revenue || 0) / estimatedEmployees,  // 人效
+        
+        // 客户指标
+        avg_spending: (data.monthly_revenue || 0) / (data.total_customers || 1),  // 客单价
+        member_repurchase: (data.repeat_customers || 0) / (data.total_customers || 1),
+        
+        // 线上指标
+        takeaway_ratio: (data.online_revenue || 0) / (data.monthly_revenue || 1),
+        review_score: data.average_rating || 0,
+        negative_comment_rate: (data.bad_reviews || 0) / (data.total_reviews || 1),
+        
+        // 内容营销指数(综合评分)
+        content_marketing_index: this.calculateContentMarketingIndex(data),
+        short_video_count: data.short_video_count || 0,
+        live_stream_count: data.live_stream_count || 0,
+        
+        // 差评分析
+        service_bad_review_rate: (data.service_bad_reviews || 0) / (data.bad_reviews || 1),
+        taste_bad_review_rate: (data.taste_bad_reviews || 0) / (data.bad_reviews || 1),
+        
+        // 选址匹配度
+        location_match_score: this.calculateLocationMatchScore(data),
+        
+        // 营销健康度
+        marketing_health_score: this.calculateMarketingHealthScore(data),
+        
+        // 辅助数据
+        estimated_employees: estimatedEmployees
+    };
+
+    // ✅ 第二步：添加财务健康指标（这些可能依赖基础 kpi）
+    const financialHealth = this.calculateFinancialHealth(data, totalCost, monthlyRevenue);
+    Object.assign(kpi, financialHealth);
+
+    // ✅ 第三步：添加运营效率指标（需要完整的 kpi 对象）
+    const operationalEfficiency = this.calculateOperationalEfficiency(data, kpi);
+    Object.assign(kpi, operationalEfficiency);
+
+    // Cache the result
+    this.cache.set(cacheKey, kpi);
+    return kpi;
+}
 
     // 计算内容营销指数
     calculateContentMarketingIndex(data) {
