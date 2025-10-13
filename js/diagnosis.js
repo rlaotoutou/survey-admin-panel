@@ -129,13 +129,32 @@ class RestaurantDiagnosisAdvanced {
             estimated_employees: estimatedEmployees
         };
 
-        // 第二步：添加财务健康指标（这些可能依赖基础 kpi）
         const financialHealth = this.calculateFinancialHealth(data, totalCost, monthlyRevenue);
         Object.assign(kpi, financialHealth);
 
-        // 第三步：添加运营效率指标（需要完整的 kpi 对象）
         const operationalEfficiency = this.calculateOperationalEfficiency(data, kpi);
         Object.assign(kpi, operationalEfficiency);
+
+        const customerValue = this.calculateCustomerValue(data, kpi);
+        Object.assign(kpi, customerValue);
+
+        const churnRisk = this.calculateCustomerChurnRisk(data, kpi);
+        Object.assign(kpi, churnRisk);
+
+        const satisfaction = this.calculateCustomerSatisfaction(data, kpi);
+        Object.assign(kpi, satisfaction);
+
+        const marketing = this.calculateMarketingEffectiveness(data, kpi);
+        Object.assign(kpi, marketing);
+
+        const risks = this.calculateRiskIndicators(data, kpi, totalCost, monthlyRevenue);
+        Object.assign(kpi, risks);
+
+        const competitive = this.calculateCompetitiveAnalysis(data, kpi);
+        Object.assign(kpi, competitive);
+
+        const expansion = this.calculateExpansionFeasibility(data, kpi);
+        Object.assign(kpi, expansion);
 
         // Cache the result
         this.cache.set(cacheKey, kpi);
