@@ -337,17 +337,21 @@ class RestaurantSurveyApp {
             </div>
         `;
 
-        // Use requestIdleCallback for non-critical rendering
-        if (window.requestIdleCallback) {
-            requestIdleCallback(() => {
+        try {
+        // 立即执行而不是等待 requestIdleCallback
+        setTimeout(() => {
+            try {
                 this.generateDiagnosisReport(record);
-            });
-        } else {
-            setTimeout(() => {
-                this.generateDiagnosisReport(record);
-            }, 0);
-        }
+            } catch (error) {
+                console.error('❌ 生成诊断报告失败:', error);
+                this.showDiagnosisError(error);
+            }
+        }, 100); // 给UI一点时间显示加载状态
+    } catch (error) {
+        console.error('❌ 渲染诊断内容失败:', error);
+        this.showDiagnosisError(error);
     }
+}
 
     generateDiagnosisReport(record) {
         const kpi = this.diagnosis.calculateKPI(record);
