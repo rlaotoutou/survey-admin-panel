@@ -235,7 +235,7 @@ class RestaurantDiagnosisAdvanced {
         const healthLevel = this.getHealthLevel(overallScore);
         
         return `
-            <div id="reportExport" class="diagnosis-report-v2">
+            <div class="diagnosis-report-v2">
                 ${this.generateStoreOverview(data, overallScore, healthLevel)}
                 ${this.generateDashboardSection(kpi, data)}
                 ${this.generateCostAnalysisSection(data, kpi)}
@@ -492,7 +492,7 @@ class RestaurantDiagnosisAdvanced {
         const seatUtilization = Math.round(dailyCustomers / seats * 100);
 
         return `
-            <div class="diagnosis-section">
+                <div class="diagnosis-section">
                 <h3>📈 营收结构与盈利能力</h3>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0;">
                     <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">

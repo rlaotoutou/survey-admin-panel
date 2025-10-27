@@ -1268,34 +1268,13 @@
             const report = diagnosis.diagnose(data);
             const kpi = diagnosis.calculateKPI(data);
             const benchmark = diagnosis.industryBenchmarks[data.business_type] || diagnosis.industryBenchmarks['其他'];
-            let html = '';
+            
+            // 使用v2版本的报告生成
+            const html = diagnosis.generateReport(data, kpi, benchmark);
+            document.getElementById('diagnosisContent').innerHTML = html;
+        }
 
-            // 报告头部
-            html += `
-                <div class="report-header">
-                    <h1 style="font-size: 24px; margin-bottom: 10px;">${data.store_name} 经营诊断报告</h1>
-                    <p style="opacity: 0.9;">生成时间: ${new Date().toLocaleString()} | 报告编号: ${data.id}-${Date.now()}</p>
-                    <p style="opacity: 0.9; font-size: 14px;">业态: ${data.business_type} | 商圈: ${data.business_circle} | 装修: ${data.decoration_level}</p>
-                </div>
-            `;
-
-            // 总体评分
-            html += `
-                <div class="diagnosis-section">
-                    <h3>一、总体健康评分</h3>
-                    <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%); border-radius: 8px;">
-                        <div style="font-size: 72px; font-weight: bold; color: #667eea; margin-bottom: 10px;">
-                            ${report.overallScore}
-                        </div>
-                        <div class="score-badge ${diagnosis.getScoreBadgeClass(report.overallScore)}" style="font-size: 20px; padding: 8px 24px;">
-                            ${diagnosis.getScoreLabel(report.overallScore)}
-                        </div>
-                        <p style="margin-top: 15px; color: #666; font-size: 14px;">
-                            超过了同业态 <strong>${report.overallScore > 70 ? '60%' : report.overallScore > 50 ? '40%' : '20%'}</strong> 的门店
-                        </p>
-                    </div>
-                    
-                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+        // 主题切换功能
                         <div class="metric-card">
                             <div class="metric-value" style="color: ${report.dimensionScores.cost >= 80 ? '#2ecc71' : report.dimensionScores.cost >= 60 ? '#f39c12' : '#e74c3c'}">${report.dimensionScores.cost}</div>
                             <div class="metric-label">成本控制</div>
@@ -2124,9 +2103,6 @@
                     </p>
                 </div>
             `;
-
-            document.getElementById('diagnosisContent').innerHTML = html;
-        }
 
         // 主题切换功能
         function changeTheme(theme) {

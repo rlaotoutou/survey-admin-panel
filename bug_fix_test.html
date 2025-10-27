@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bug修复测试</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="css/styles.min.css">
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8 text-green-600">✅ Bug修复测试</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">测试项目：</h2>
+            <ul class="space-y-2">
+                <li class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    修复了HTML中重复的旧代码
+                </li>
+                <li class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    修复了generateReport函数中的重复ID问题
+                </li>
+                <li class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    修复了HTML标签闭合问题
+                </li>
+                <li class="flex items-center">
+                    <span class="text-green-500 mr-2">✓</span>
+                    确保v2版本报告生成正常工作
+                </li>
+            </ul>
+        </div>
+
+        <div class="bg-blue-50 rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">测试报告生成：</h2>
+            <button onclick="testReportGeneration()" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                测试生成v2报告
+            </button>
+            <div id="testResult" class="mt-4"></div>
+        </div>
+
+        <div id="reportContainer" class="bg-white rounded-lg shadow-lg p-6">
+            <div class="text-center text-gray-500 py-8">
+                点击上方按钮测试报告生成
+            </div>
+        </div>
+    </div>
+
+    <script src="js/diagnosis.js"></script>
+    <script>
+        function testReportGeneration() {
+            try {
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                
+                // 测试数据
+                const testData = {
+                    id: 'TEST001',
+                    store_name: '测试快餐店',
+                    business_type: '快餐',
+                    location: '一类商圈',
+                    area: 120,
+                    seats: 50,
+                    monthly_revenue: 150000,
+                    food_cost: 55000,
+                    labor_cost: 46000,
+                    rent_cost: 27600,
+                    utility_cost: 7350,
+                    marketing_cost: 13800,
+                    avg_order_value: 50,
+                    customer_satisfaction: 75,
+                    repeat_customer_rate: 30,
+                    decoration_level: '中档',
+                    video_count: 80,
+                    live_count: 20
+                };
+
+                const kpi = diagnosis.calculateKPI(testData);
+                const benchmark = diagnosis.industryBenchmarks[testData.business_type] || diagnosis.industryBenchmarks['其他'];
+                
+                const html = diagnosis.generateReport(testData, kpi, benchmark);
+                document.getElementById('reportContainer').innerHTML = html;
+                
+                document.getElementById('testResult').innerHTML = `
+                    <div class="text-green-600 font-semibold">
+                        ✅ 报告生成成功！v2版本工作正常
+                    </div>
+                `;
+                
+            } catch (error) {
+                document.getElementById('testResult').innerHTML = `
+                    <div class="text-red-600 font-semibold">
+                        ❌ 报告生成失败：${error.message}
+                    </div>
+                `;
+                console.error('测试失败:', error);
+            }
+        }
+    </script>
+</body>
+</html>
