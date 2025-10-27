@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>餐饮调查数据管理与诊断系统</title>
+    <link rel="manifest" href="./manifest.json">
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        .loading {
+            display: none;
+        }
+        .loading.active {
+            display: inline-flex;
+            align-items: center;
+        }
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .data-table {
+            font-size: 13px;
+        }
+        .data-table th,
+        .data-table td {
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+        .data-table th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        .data-table tr:hover {
+            background-color: #f0f9ff;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 90vw;
+            max-height: 90vh;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            border-bottom-color: #3b82f6;
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .health-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .health-table th, .health-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .health-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+        .status-healthy {
+            background-color: #d4edda !important;
+            color: #155724;
+            font-weight: 600;
+        }
+        .status-warning {
+            background-color: #fff3cd !important;
+            color: #856404;
+            font-weight: 600;
+        }
+        .status-danger {
+            background-color: #f8d7da !important;
+            color: #721c24;
+            font-weight: 600;
+        }
+        .diagnosis-section {
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .diagnosis-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+        .diagnosis-section h3::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin-right: 10px;
+        }
+        .info-card {
+            background: white;
+            padding: 15px;
+            margin: 12px 0;
+            border-left: 4px solid #667eea;
+        }
+        .action-plans {
+            list-style: none;
+            padding: 0;
+        }
+        .action-plans li {
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        .priority-high { border-left-color: #e74c3c; }
+        .priority-medium { border-left-color: #f39c12; }
+        .priority-low { border-left-color: #27ae60; }
+        .store-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 15px 0;
+        }
+        .store-info-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+        .store-info-item label {
+            font-size: 11px;
+            color: #7f8c8d;
+            display: block;
+            margin-bottom: 4px;
+        }
+        .store-info-item value {
+            font-size: 15px;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .score-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .score-excellent { background: #d4edda; color: #155724; }
+        .score-good { background: #d1ecf1; color: #0c5460; }
+        .score-warning { background: #fff3cd; color: #856404; }
+        .score-danger { background: #f8d7da; color: #721c24; }
+        .metric-card {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            border-top: 3px solid #667eea;
+            margin: 10px 0;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+        #reportExport {
+            background: white;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .report-header {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold text-center mb-8">餐饮调查数据管理与诊断系统</h1>
+        
+        <!-- 标签页导航 -->
+        <div class="flex justify-center mb-8">
+            <button class="tab-button active" onclick="switchTab('dataTab')">数据管理</button>
+            <button class="tab-button" onclick="switchTab('diagnosisTab')">AI诊断报告</button>
+        </div>
+
+        <!-- 数据管理标签页 -->
+        <div id="dataTab" class="tab-content active">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">数据管理</h2>
+                    <div class="flex gap-4">
+                        <button id="loadData" onclick="loadData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                            <span class="loading" id="loadingSpinner">
+                                <div class="spinner"></div>
+                                加载中...
+                            </span>
+                            <span id="loadText">加载数据</span>
+                        </button>
+                        <button onclick="downloadCSV()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                            导出CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 数据表格 -->
+                <div id="dataContainer" class="overflow-x-auto">
+                    <div class="text-center text-gray-500 py-20">
+                        点击"加载数据"按钮查看数据
+                    </div>
+                </div>
+
+                <!-- 分页控件 -->
+                <div id="pagination" class="flex justify-between items-center mt-6 hidden">
+                    <div class="flex items-center gap-4">
+                        <button id="prevPage" onclick="changePage(-1)" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" disabled>上一页</button>
+                        <span id="pageInfo">第 1 页，共 1 页</span>
+                        <button id="nextPage" onclick="changePage(1)" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" disabled>下一页</button>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        显示 <span id="currentRange">1-10</span> 条，共 <span id="totalRecords">0</span> 条记录
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI诊断报告标签页 -->
+        <div id="diagnosisTab" class="tab-content">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold">AI诊断报告</h2>
+                    <div class="flex gap-4">
+                        <button onclick="generateDiagnosis()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                            生成诊断报告
+                        </button>
+                        <button onclick="exportToPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                            导出PDF
+                        </button>
+                        <button onclick="exportToImage()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
+                            导出图片
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 主题选择 -->
+                <div class="mb-6 flex justify-center gap-4">
+                    <label class="font-semibold">主题选择：</label>
+                    <select id="themeSelector" onchange="changeTheme(this.value)" class="px-4 py-2 border border-gray-300 rounded-lg">
+                        <option value="fresh">🌿 清新主题</option>
+                        <option value="professional">⚙️ 专业主题</option>
+                        <option value="business">💼 商务主题</option>
+                    </select>
+                </div>
+
+                <!-- 诊断报告内容 -->
+                <div id="diagnosisContent" class="diagnosis-report-v2 theme-fresh">
+                    <div class="text-center text-gray-500 py-20">
+                        点击"生成诊断报告"按钮查看AI诊断结果
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详情模态框 -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold">详细信息</h3>
+                <button id="closeModal" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let currentPage = 1;
+        const pageSize = 10;
+        let allData = [];
+        let diagnosis = null;
+
+        // 等待页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('页面加载完成，开始初始化...');
+            
+            // 等待diagnosis.js加载完成
+            if (typeof RestaurantDiagnosisAdvanced !== 'undefined') {
+                diagnosis = new RestaurantDiagnosisAdvanced();
+                console.log('诊断系统初始化成功');
+            } else {
+                console.error('RestaurantDiagnosisAdvanced 类未定义');
+            }
+            
+            // 加载保存的主题
+            const savedTheme = localStorage.getItem('selectedTheme') || 'fresh';
+            const themeSelector = document.getElementById('themeSelector');
+            if (themeSelector) {
+                themeSelector.value = savedTheme;
+                changeTheme(savedTheme);
+            }
+            
+            console.log('初始化完成');
+        });
+
+        // 标签页切换
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName).classList.add('active');
+            
+            // 激活对应的标签按钮
+            event.target.classList.add('active');
+        }
+
+        // 加载数据
+        function loadData() {
+            console.log('开始加载数据...');
+            toggleLoading(true);
+            
+            // 模拟数据加载
+            setTimeout(() => {
+                allData = generateMockData();
+                displayData();
+                updatePagination();
+                toggleLoading(false);
+                console.log('数据加载完成，共', allData.length, '条记录');
+            }, 1000);
+        }
+
+        // 生成模拟数据
+        function generateMockData() {
+            const data = [];
+            const businessTypes = ['快餐', '火锅', '正餐', '茶餐厅', '咖啡厅', '茶饮店'];
+            const locations = ['一类商圈', '二类商圈', '三类商圈', '社区商圈'];
+            const decorationLevels = ['中高档', '中档', '中低档'];
+            
+            for (let i = 1; i <= 50; i++) {
+                const monthlyRevenue = Math.floor(Math.random() * 200000) + 50000;
+                const foodCost = Math.floor(monthlyRevenue * (0.25 + Math.random() * 0.2));
+                const laborCost = Math.floor(monthlyRevenue * (0.2 + Math.random() * 0.15));
+                const rentCost = Math.floor(monthlyRevenue * (0.1 + Math.random() * 0.1));
+                
+                data.push({
+                    id: i,
+                    store_name: `测试店铺${i}`,
+                    business_type: businessTypes[Math.floor(Math.random() * businessTypes.length)],
+                    location: locations[Math.floor(Math.random() * locations.length)],
+                    area: Math.floor(Math.random() * 200) + 50,
+                    seats: Math.floor(Math.random() * 100) + 20,
+                    monthly_revenue: monthlyRevenue,
+                    food_cost: foodCost,
+                    labor_cost: laborCost,
+                    rent_cost: rentCost,
+                    utility_cost: Math.floor(monthlyRevenue * 0.05),
+                    marketing_cost: Math.floor(monthlyRevenue * 0.08),
+                    avg_order_value: Math.floor(Math.random() * 50) + 30,
+                    customer_satisfaction: Math.floor(Math.random() * 30) + 70,
+                    repeat_customer_rate: Math.floor(Math.random() * 40) + 20,
+                    decoration_level: decorationLevels[Math.floor(Math.random() * decorationLevels.length)],
+                    video_count: Math.floor(Math.random() * 100),
+                    live_count: Math.floor(Math.random() * 30),
+                    created_at: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString()
+                });
+            }
+            
+            return data;
+        }
+
+        // 显示数据
+        function displayData() {
+            const dataContainer = document.getElementById('dataContainer');
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, allData.length);
+            const pageData = allData.slice(startIndex, endIndex);
+            
+            if (pageData.length === 0) {
+                dataContainer.innerHTML = '<div class="text-center text-gray-500 py-20">暂无数据</div>';
+                return;
+            }
+            
+            const table = document.createElement('table');
+            table.className = 'data-table w-full';
+            
+            // 表头
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th>ID</th>
+                    <th>店铺名称</th>
+                    <th>业态</th>
+                    <th>位置</th>
+                    <th>面积(㎡)</th>
+                    <th>座位数</th>
+                    <th>月营收(元)</th>
+                    <th>食材成本(元)</th>
+                    <th>人力成本(元)</th>
+                    <th>租金成本(元)</th>
+                    <th>客单价(元)</th>
+                    <th>满意度</th>
+                    <th>复购率(%)</th>
+                    <th>操作</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+            
+            // 表体
+            const tbody = document.createElement('tbody');
+            pageData.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.id}</td>
+                    <td>${item.store_name}</td>
+                    <td>${item.business_type}</td>
+                    <td>${item.location}</td>
+                    <td>${item.area}</td>
+                    <td>${item.seats}</td>
+                    <td>${formatNumber(item.monthly_revenue)}</td>
+                    <td>${formatNumber(item.food_cost)}</td>
+                    <td>${formatNumber(item.labor_cost)}</td>
+                    <td>${formatNumber(item.rent_cost)}</td>
+                    <td>${item.avg_order_value}</td>
+                    <td>${item.customer_satisfaction}</td>
+                    <td>${item.repeat_customer_rate}</td>
+                    <td>
+                        <button onclick="viewDetail(${item.id})" class="text-blue-600 hover:text-blue-800 mr-2">
+                            查看
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+            
+            dataContainer.innerHTML = '';
+            dataContainer.appendChild(table);
+        }
+
+        // 查看详情
+        function viewDetail(id) {
+            const item = allData.find(d => d.id === id);
+            if (!item) return;
+            
+            const modalContent = document.getElementById('modalContent');
+            modalContent.innerHTML = `
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><strong>店铺名称：</strong>${item.store_name}</div>
+                        <div><strong>业态类型：</strong>${item.business_type}</div>
+                        <div><strong>位置：</strong>${item.location}</div>
+                        <div><strong>装修档次：</strong>${item.decoration_level}</div>
+                        <div><strong>面积：</strong>${item.area}㎡</div>
+                        <div><strong>座位数：</strong>${item.seats}个</div>
+                    </div>
+                    <div class="border-t pt-4">
+                        <h4 class="font-bold mb-2">财务数据</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><strong>月营收：</strong>¥${formatNumber(item.monthly_revenue)}</div>
+                            <div><strong>食材成本：</strong>¥${formatNumber(item.food_cost)}</div>
+                            <div><strong>人力成本：</strong>¥${formatNumber(item.labor_cost)}</div>
+                            <div><strong>租金成本：</strong>¥${formatNumber(item.rent_cost)}</div>
+                            <div><strong>水电气：</strong>¥${formatNumber(item.utility_cost)}</div>
+                            <div><strong>营销成本：</strong>¥${formatNumber(item.marketing_cost)}</div>
+                        </div>
+                    </div>
+                    <div class="border-t pt-4">
+                        <h4 class="font-bold mb-2">运营数据</h4>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><strong>客单价：</strong>¥${item.avg_order_value}</div>
+                            <div><strong>客户满意度：</strong>${item.customer_satisfaction}分</div>
+                            <div><strong>复购率：</strong>${item.repeat_customer_rate}%</div>
+                            <div><strong>短视频数：</strong>${item.video_count}条</div>
+                            <div><strong>直播场次：</strong>${item.live_count}场</div>
+                            <div><strong>创建时间：</strong>${formatDate(item.created_at)}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('detailModal').classList.add('active');
+        }
+
+        // 生成诊断报告
+        function generateDiagnosis() {
+            console.log('开始生成诊断报告...');
+            
+            if (!diagnosis) {
+                console.error('诊断系统未初始化');
+                alert('诊断系统未初始化，请刷新页面重试');
+                return;
+            }
+            
+            // 使用第一个数据作为示例
+            if (allData.length === 0) {
+                alert('请先加载数据');
+                return;
+            }
+            
+            const data = allData[0];
+            console.log('使用数据:', data);
+            
+            try {
+                const kpi = diagnosis.calculateKPI(data);
+                const benchmark = diagnosis.industryBenchmarks[data.business_type] || diagnosis.industryBenchmarks['其他'];
+                
+                console.log('KPI计算结果:', kpi);
+                console.log('行业基准:', benchmark);
+                
+                const html = diagnosis.generateReport(data, kpi, benchmark);
+                document.getElementById('diagnosisContent').innerHTML = html;
+                
+                console.log('诊断报告生成成功');
+            } catch (error) {
+                console.error('生成诊断报告失败:', error);
+                alert('生成诊断报告失败: ' + error.message);
+            }
+        }
+
+        // 主题切换功能
+        function changeTheme(theme) {
+            const diagnosisContent = document.getElementById('diagnosisContent');
+            diagnosisContent.className = `diagnosis-report-v2 theme-${theme}`;
+            
+            // 保存主题选择
+            localStorage.setItem('selectedTheme', theme);
+            console.log('主题切换为:', theme);
+        }
+
+        // PDF导出功能
+        function exportToPDF() {
+            const reportContent = document.getElementById('diagnosisContent');
+            
+            if (typeof html2pdf !== 'undefined') {
+                const opt = {
+                    margin: 1,
+                    filename: '餐饮店诊断报告.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+                
+                html2pdf().set(opt).from(reportContent).save();
+                console.log('PDF导出成功');
+            } else {
+                alert('PDF导出功能需要加载html2pdf库');
+            }
+        }
+
+        // 图片导出功能
+        function exportToImage() {
+            const reportContent = document.getElementById('diagnosisContent');
+            
+            html2canvas(reportContent, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = '餐饮店诊断报告.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                console.log('图片导出成功');
+            }).catch(error => {
+                console.error('导出图片失败:', error);
+                alert('导出图片失败，请重试');
+            });
+        }
+
+        // 分页功能
+        function changePage(direction) {
+            const newPage = currentPage + direction;
+            const totalPages = Math.ceil(allData.length / pageSize);
+            
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                displayData();
+                updatePagination();
+            }
+        }
+
+        // 更新分页信息
+        function updatePagination() {
+            const totalPages = Math.ceil(allData.length / pageSize);
+            const startIndex = (currentPage - 1) * pageSize + 1;
+            const endIndex = Math.min(currentPage * pageSize, allData.length);
+            
+            document.getElementById('pageInfo').textContent = `第 ${currentPage} 页，共 ${totalPages} 页`;
+            document.getElementById('currentRange').textContent = `${startIndex}-${endIndex}`;
+            document.getElementById('totalRecords').textContent = allData.length;
+            
+            document.getElementById('prevPage').disabled = currentPage <= 1;
+            document.getElementById('nextPage').disabled = currentPage >= totalPages;
+            
+            if (allData.length > 0) {
+                document.getElementById('pagination').classList.remove('hidden');
+            }
+        }
+
+        // 下载CSV
+        function downloadCSV() {
+            if (allData.length === 0) {
+                alert('没有数据可导出');
+                return;
+            }
+            
+            try {
+                const headers = Object.keys(allData[0]);
+                const csvContent = [
+                    headers.join(','),
+                    ...allData.map(row => headers.map(header => `"${row[header] || ''}"`).join(','))
+                ].join('\n');
+                
+                const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = '餐饮数据.csv';
+                link.click();
+                
+                console.log('CSV导出成功');
+            } catch (error) {
+                console.error('导出失败:', error);
+                alert('导出失败: ' + error.message);
+            }
+        }
+
+        // 切换加载状态
+        function toggleLoading(show) {
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const loadText = document.getElementById('loadText');
+            const loadData = document.getElementById('loadData');
+            
+            if (show) {
+                loadingSpinner.classList.add('active');
+                loadText.style.display = 'none';
+                loadData.disabled = true;
+            } else {
+                loadingSpinner.classList.remove('active');
+                loadText.style.display = 'inline';
+                loadData.disabled = false;
+            }
+        }
+
+        // 格式化日期
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            return new Date(dateString).toLocaleString('zh-CN');
+        }
+
+        // 格式化数字
+        function formatNumber(num) {
+            if (num === null || num === undefined) return '-';
+            return num.toLocaleString();
+        }
+
+        // 关闭模态框
+        document.getElementById('closeModal').addEventListener('click', function() {
+            document.getElementById('detailModal').classList.remove('active');
+        });
+
+        // 点击模态框外部关闭
+        document.getElementById('detailModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+            }
+        });
+    </script>
+    
+    <!-- 加载诊断系统 -->
+    <script src="./js/diagnosis.js"></script>
+</body>
+</html>
