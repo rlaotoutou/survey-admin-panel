@@ -250,44 +250,169 @@ class RestaurantDiagnosisAdvanced {
 
     generateStoreOverview(data, overallScore, healthLevel) {
         const businessType = data.business_type || '快餐';
-        const location = data.location || '一类商圈';
-        const area = data.area || 120;
+        const location = data.business_circle || '一类商圈';
+        const area = data.store_area || 120;
         const seats = data.seats || 50;
         const monthlyRevenue = data.monthly_revenue || 150000;
-        const dailyCustomers = Math.round(monthlyRevenue / 30 / (data.avg_order_value || 50));
+        const dailyCustomers = data.daily_customers || Math.round(monthlyRevenue / 30 / (data.avg_order_value || 50));
         const decorationLevel = data.decoration_level || '中档';
+        const avgOrderValue = Math.round(monthlyRevenue / (dailyCustomers * 30)) || 50;
+        const totalCustomers = data.total_customers || dailyCustomers * 30;
 
         return `
-            <div class="store-overview-card">
-                <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 700;">
-                    📍 ${data.store_name || '朝阳路快餐店'} ｜ ${businessType}业态 ｜ ${location}
-                </h2>
-                <div class="store-info-grid">
-                    <div class="store-info-item">
-                        <span class="store-info-icon">🏠</span>
-                        <span>面积：${area}㎡ ｜ 座位数：${seats}个</span>
+            <div class="store-overview-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; padding: 24px; margin-bottom: 24px; color: white; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="margin: 0 0 12px 0; font-size: 28px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            🏪 ${data.store_name || '餐饮门店'}
+                        </h2>
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 14px; backdrop-filter: blur(10px);">
+                                📍 ${location}
+                            </span>
+                            <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 14px; backdrop-filter: blur(10px);">
+                                🍴 ${businessType}
+                            </span>
+                            <span style="background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 14px; backdrop-filter: blur(10px);">
+                                ✨ ${decorationLevel}装修
+                            </span>
+                        </div>
                     </div>
-                    <div class="store-info-item">
-                        <span class="store-info-icon">💰</span>
-                        <span>月营收：¥${this.formatNumber(monthlyRevenue)} ｜ 日均客流：${dailyCustomers}人</span>
-                    </div>
-                    <div class="store-info-item">
-                        <span class="store-info-icon">⚙️</span>
-                        <span>装修档次：${decorationLevel} ｜ 综合得分：${overallScore}分</span>
+                    <div style="text-align: center; background: rgba(255,255,255,0.95); color: #667eea; padding: 16px 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                        <div style="font-size: 36px; font-weight: 700; line-height: 1; margin-bottom: 4px;">${overallScore}</div>
+                        <div style="font-size: 12px; color: #666; margin-bottom: 8px;">综合得分</div>
+                        <div class="health-level-badge ${healthLevel.class}" style="display: inline-block; padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 13px; background: ${healthLevel.bgColor}; color: ${healthLevel.color};">
+                            ${healthLevel.label}
+                        </div>
+                        <div style="font-size: 10px; color: #9ca3af; margin-top: 8px;">${healthLevel.description}</div>
                     </div>
                 </div>
-                <div class="health-level-badge ${healthLevel.class}">
-                    ${healthLevel.label}
+
+                <!-- 关键指标卡片网格 -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 20px;">
+                    <!-- 门店面积 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #3b82f6;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">🏠</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">门店面积</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #3b82f6;">${area}<span style="font-size: 14px; color: #6b7280;">㎡</span></div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            坪效：¥${Math.round(monthlyRevenue / area)}/㎡
+                        </div>
+                    </div>
+
+                    <!-- 座位数 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #10b981;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">🪑</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">座位数量</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #10b981;">${seats}<span style="font-size: 14px; color: #6b7280;">个</span></div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            翻台率：${(dailyCustomers / seats).toFixed(1)}次/天
+                        </div>
+                    </div>
+
+                    <!-- 月营收 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #f59e0b;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">💰</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">月营收</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #f59e0b;">¥${this.formatNumber(monthlyRevenue)}</div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            日均：¥${this.formatNumber(Math.round(monthlyRevenue / 30))}
+                        </div>
+                    </div>
+
+                    <!-- 日均客流 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #8b5cf6;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">👥</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">日均客流</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #8b5cf6;">${dailyCustomers}<span style="font-size: 14px; color: #6b7280;">人</span></div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            月客流：${this.formatNumber(totalCustomers)}人
+                        </div>
+                    </div>
+
+                    <!-- 客单价 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #ef4444;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">🎫</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">客单价</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #ef4444;">¥${avgOrderValue}</div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            ${avgOrderValue >= 80 ? '高档消费' : avgOrderValue >= 50 ? '中档消费' : '平价消费'}
+                        </div>
+                    </div>
+
+                    <!-- 营业时长/人效 -->
+                    <div style="background: rgba(255,255,255,0.95); padding: 20px; border-radius: 12px; color: #2c3e50; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #06b6d4;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+                            <div style="font-size: 32px;">⚡</div>
+                            <div style="flex: 1;">
+                                <div style="font-size: 12px; color: #6b7280; margin-bottom: 2px;">人效指标</div>
+                                <div style="font-size: 24px; font-weight: 700; color: #06b6d4;">¥${this.formatNumber(Math.round(monthlyRevenue / Math.max(1, Math.round((data.labor_cost || 0) / 5000))))}</div>
+                            </div>
+                        </div>
+                        <div style="font-size: 11px; color: #9ca3af; margin-top: 8px;">
+                            月人均营收
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
     }
 
     getHealthLevel(score) {
-        if (score >= 85) return { class: 'health-excellent', label: '优秀' };
-        if (score >= 70) return { class: 'health-good', label: '良好' };
-        if (score >= 60) return { class: 'health-warning', label: '待改善' };
-        return { class: 'health-danger', label: '警示' };
+        if (score >= 85) {
+            return {
+                class: 'health-excellent',
+                label: '🌟 优秀',
+                color: '#10b981',
+                bgColor: '#d1fae5',
+                description: '经营状况优秀，保持良好势头'
+            };
+        }
+        if (score >= 70) {
+            return {
+                class: 'health-good',
+                label: '✅ 良好',
+                color: '#3b82f6',
+                bgColor: '#dbeafe',
+                description: '经营状况良好，有提升空间'
+            };
+        }
+        if (score >= 60) {
+            return {
+                class: 'health-warning',
+                label: '⚠️ 待改善',
+                color: '#f59e0b',
+                bgColor: '#fef3c7',
+                description: '需要关注部分经营指标'
+            };
+        }
+        return {
+            class: 'health-danger',
+            label: '🚨 警示',
+            color: '#ef4444',
+            bgColor: '#fee2e2',
+            description: '经营状况需要重点改善'
+        };
     }
 
     calculateCostControlScore(data) {
