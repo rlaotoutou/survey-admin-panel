@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单交互测试</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-2xl font-bold text-center mb-8">🔧 简单交互测试</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-lg font-semibold mb-4">测试按钮：</h2>
+            <div class="space-y-4">
+                <div>
+                    <button onclick="alert('按钮点击成功！')" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        测试基础点击
+                    </button>
+                </div>
+                
+                <div>
+                    <button onclick="testFunction()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        测试函数调用
+                    </button>
+                    <span id="result" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="testDiagnosis()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        测试诊断对象
+                    </button>
+                    <span id="diagnosisResult" class="ml-4"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-lg font-semibold mb-4">控制台输出：</h2>
+            <div id="console" class="bg-gray-100 p-4 rounded text-sm font-mono">
+                等待测试...
+            </div>
+        </div>
+    </div>
+
+    <script src="js/diagnosis.js"></script>
+    <script>
+        function testFunction() {
+            document.getElementById('result').innerHTML = '<span class="text-green-600">✅ 函数调用成功</span>';
+            log('函数调用成功');
+        }
+
+        function testDiagnosis() {
+            try {
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                document.getElementById('diagnosisResult').innerHTML = '<span class="text-green-600">✅ 诊断对象创建成功</span>';
+                log('诊断对象创建成功');
+            } catch (error) {
+                document.getElementById('diagnosisResult').innerHTML = '<span class="text-red-600">❌ 诊断对象创建失败: ' + error.message + '</span>';
+                log('诊断对象创建失败: ' + error.message);
+            }
+        }
+
+        function log(message) {
+            const console = document.getElementById('console');
+            const time = new Date().toLocaleTimeString();
+            console.innerHTML += `[${time}] ${message}\n`;
+        }
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            log('页面加载完成');
+            log('诊断对象类型: ' + typeof RestaurantDiagnosisAdvanced);
+        });
+    </script>
+</body>
+</html>

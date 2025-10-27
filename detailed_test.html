@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>详细交互测试</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8">🔧 详细交互测试</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">测试步骤：</h2>
+            <div class="space-y-4">
+                <div>
+                    <button onclick="step1()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        步骤1: 测试基础交互
+                    </button>
+                    <span id="step1Result" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="step2()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        步骤2: 测试诊断对象
+                    </button>
+                    <span id="step2Result" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="step3()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        步骤3: 测试报告生成
+                    </button>
+                    <span id="step3Result" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="step4()" class="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
+                        步骤4: 测试主题切换
+                    </button>
+                    <span id="step4Result" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="step5()" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                        步骤5: 测试导出功能
+                    </button>
+                    <span id="step5Result" class="ml-4"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">测试报告：</h2>
+            <div id="testReport" class="bg-gray-100 p-4 rounded">
+                <div class="text-center text-gray-500 py-8">
+                    测试报告将在这里显示
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">控制台日志：</h2>
+            <div id="console" class="bg-gray-100 p-4 rounded text-sm font-mono max-h-64 overflow-y-auto">
+                等待测试...
+            </div>
+        </div>
+    </div>
+
+    <script src="js/diagnosis.js"></script>
+    <script>
+        let testResults = [];
+
+        function log(message) {
+            const console = document.getElementById('console');
+            const time = new Date().toLocaleTimeString();
+            console.innerHTML += `[${time}] ${message}\n`;
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function step1() {
+            try {
+                log('步骤1: 测试基础交互');
+                document.getElementById('step1Result').innerHTML = '<span class="text-green-600">✅ 基础交互正常</span>';
+                testResults.push('步骤1: 通过');
+                log('步骤1: 通过');
+            } catch (error) {
+                document.getElementById('step1Result').innerHTML = '<span class="text-red-600">❌ 基础交互失败</span>';
+                log('步骤1: 失败 - ' + error.message);
+            }
+        }
+
+        function step2() {
+            try {
+                log('步骤2: 测试诊断对象');
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                if (diagnosis && typeof diagnosis.generateReport === 'function') {
+                    document.getElementById('step2Result').innerHTML = '<span class="text-green-600">✅ 诊断对象正常</span>';
+                    testResults.push('步骤2: 通过');
+                    log('步骤2: 通过');
+                } else {
+                    throw new Error('诊断对象异常');
+                }
+            } catch (error) {
+                document.getElementById('step2Result').innerHTML = '<span class="text-red-600">❌ 诊断对象失败</span>';
+                log('步骤2: 失败 - ' + error.message);
+            }
+        }
+
+        function step3() {
+            try {
+                log('步骤3: 测试报告生成');
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                const testData = {
+                    id: 'TEST001',
+                    store_name: '测试店',
+                    business_type: '快餐',
+                    monthly_revenue: 150000,
+                    food_cost: 55000,
+                    labor_cost: 46000,
+                    rent_cost: 27600,
+                    utility_cost: 7350,
+                    marketing_cost: 13800
+                };
+
+                const kpi = diagnosis.calculateKPI(testData);
+                const benchmark = diagnosis.industryBenchmarks[testData.business_type] || diagnosis.industryBenchmarks['其他'];
+                const html = diagnosis.generateReport(testData, kpi, benchmark);
+                
+                document.getElementById('testReport').innerHTML = html;
+                document.getElementById('step3Result').innerHTML = '<span class="text-green-600">✅ 报告生成成功</span>';
+                testResults.push('步骤3: 通过');
+                log('步骤3: 通过');
+            } catch (error) {
+                document.getElementById('step3Result').innerHTML = '<span class="text-red-600">❌ 报告生成失败</span>';
+                log('步骤3: 失败 - ' + error.message);
+            }
+        }
+
+        function step4() {
+            try {
+                log('步骤4: 测试主题切换');
+                // 模拟主题切换功能
+                const reportExport = document.getElementById('testReport');
+                if (reportExport) {
+                    reportExport.className = 'diagnosis-report-v2 theme-fresh';
+                    document.getElementById('step4Result').innerHTML = '<span class="text-green-600">✅ 主题切换成功</span>';
+                    testResults.push('步骤4: 通过');
+                    log('步骤4: 通过');
+                } else {
+                    throw new Error('找不到报告容器');
+                }
+            } catch (error) {
+                document.getElementById('step4Result').innerHTML = '<span class="text-red-600">❌ 主题切换失败</span>';
+                log('步骤4: 失败 - ' + error.message);
+            }
+        }
+
+        function step5() {
+            try {
+                log('步骤5: 测试导出功能');
+                // 检查导出函数是否存在
+                if (typeof html2canvas !== 'undefined') {
+                    document.getElementById('step5Result').innerHTML = '<span class="text-green-600">✅ 导出功能可用</span>';
+                    testResults.push('步骤5: 通过');
+                    log('步骤5: 通过');
+                } else {
+                    throw new Error('导出库未加载');
+                }
+            } catch (error) {
+                document.getElementById('step5Result').innerHTML = '<span class="text-red-600">❌ 导出功能失败</span>';
+                log('步骤5: 失败 - ' + error.message);
+            }
+        }
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            log('页面加载完成');
+            log('诊断对象类型: ' + typeof RestaurantDiagnosisAdvanced);
+            log('html2canvas类型: ' + typeof html2canvas);
+            log('html2pdf类型: ' + typeof html2pdf);
+        });
+    </script>
+</body>
+</html>

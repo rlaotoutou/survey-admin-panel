@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互测试</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <link rel="stylesheet" href="css/styles.min.css">
+</head>
+<body class="bg-gray-50 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8">🔧 交互功能测试</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">测试项目：</h2>
+            <div class="space-y-4">
+                <div>
+                    <button onclick="testBasicFunction()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        测试基础函数
+                    </button>
+                    <span id="basicResult" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="testDiagnosisObject()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        测试诊断对象
+                    </button>
+                    <span id="diagnosisResult" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="testReportGeneration()" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        测试报告生成
+                    </button>
+                    <span id="reportResult" class="ml-4"></span>
+                </div>
+                
+                <div>
+                    <button onclick="testThemeChange()" class="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
+                        测试主题切换
+                    </button>
+                    <span id="themeResult" class="ml-4"></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="testReport" class="bg-white rounded-lg shadow-lg p-6">
+            <div class="text-center text-gray-500 py-8">
+                测试报告将在这里显示
+            </div>
+        </div>
+    </div>
+
+    <script src="js/diagnosis.js"></script>
+    <script>
+        // 测试基础函数
+        function testBasicFunction() {
+            try {
+                document.getElementById('basicResult').innerHTML = '<span class="text-green-600">✅ 基础函数正常</span>';
+            } catch (error) {
+                document.getElementById('basicResult').innerHTML = '<span class="text-red-600">❌ 基础函数错误: ' + error.message + '</span>';
+            }
+        }
+
+        // 测试诊断对象
+        function testDiagnosisObject() {
+            try {
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                if (diagnosis && typeof diagnosis.generateReport === 'function') {
+                    document.getElementById('diagnosisResult').innerHTML = '<span class="text-green-600">✅ 诊断对象正常</span>';
+                } else {
+                    document.getElementById('diagnosisResult').innerHTML = '<span class="text-red-600">❌ 诊断对象异常</span>';
+                }
+            } catch (error) {
+                document.getElementById('diagnosisResult').innerHTML = '<span class="text-red-600">❌ 诊断对象错误: ' + error.message + '</span>';
+            }
+        }
+
+        // 测试报告生成
+        function testReportGeneration() {
+            try {
+                const diagnosis = new RestaurantDiagnosisAdvanced();
+                const testData = {
+                    id: 'TEST001',
+                    store_name: '测试店',
+                    business_type: '快餐',
+                    monthly_revenue: 150000,
+                    food_cost: 55000,
+                    labor_cost: 46000,
+                    rent_cost: 27600,
+                    utility_cost: 7350,
+                    marketing_cost: 13800
+                };
+
+                const kpi = diagnosis.calculateKPI(testData);
+                const benchmark = diagnosis.industryBenchmarks[testData.business_type] || diagnosis.industryBenchmarks['其他'];
+                const html = diagnosis.generateReport(testData, kpi, benchmark);
+                
+                document.getElementById('testReport').innerHTML = html;
+                document.getElementById('reportResult').innerHTML = '<span class="text-green-600">✅ 报告生成成功</span>';
+            } catch (error) {
+                document.getElementById('reportResult').innerHTML = '<span class="text-red-600">❌ 报告生成失败: ' + error.message + '</span>';
+                console.error('报告生成错误:', error);
+            }
+        }
+
+        // 测试主题切换
+        function testThemeChange() {
+            try {
+                if (typeof changeTheme === 'function') {
+                    changeTheme('fresh');
+                    document.getElementById('themeResult').innerHTML = '<span class="text-green-600">✅ 主题切换正常</span>';
+                } else {
+                    document.getElementById('themeResult').innerHTML = '<span class="text-red-600">❌ 主题切换函数未定义</span>';
+                }
+            } catch (error) {
+                document.getElementById('themeResult').innerHTML = '<span class="text-red-600">❌ 主题切换错误: ' + error.message + '</span>';
+            }
+        }
+
+        // 页面加载完成后的检查
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('页面加载完成');
+            console.log('诊断对象:', typeof RestaurantDiagnosisAdvanced);
+            console.log('changeTheme函数:', typeof changeTheme);
+        });
+    </script>
+</body>
+</html>
