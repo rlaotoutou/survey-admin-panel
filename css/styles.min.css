@@ -1,2 +1,211 @@
 /* Minified CSS for Restaurant Survey Admin Panel */
 .loading{display:none}.loading.active{display:inline-flex;align-items:center}.spinner{border:2px solid #f3f3f3;border-top:2px solid #3b82f6;border-radius:50%;width:16px;height:16px;animation:spin 1s linear infinite;margin-right:8px}@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}.data-table{font-size:13px}.data-table th,.data-table td{padding:10px 12px;border:1px solid #e5e7eb;white-space:nowrap}.data-table th{background-color:#f9fafb;font-weight:600;position:sticky;top:0;z-index:10}.data-table tr:nth-child(even){background-color:#f9fafb}.data-table tr:hover{background-color:#f0f9ff}.modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.5);z-index:1000;overflow-y:auto}.modal.active{display:flex;align-items:flex-start;justify-content:center;padding:20px}.modal-content{background:white;border-radius:12px;max-width:1000px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);margin-top:20px}.tab-button{padding:12px 24px;border:none;background:transparent;cursor:pointer;border-bottom:3px solid transparent;transition:all 0.3s}.tab-button.active{border-bottom-color:#3b82f6;color:#3b82f6;font-weight:600}.tab-content{display:none}.tab-content.active{display:block}.health-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}.health-table th,.health-table td{padding:8px 12px;border:1px solid #e5e7eb;text-align:left}.health-table th{background-color:#f9fafb;font-weight:600}.status-healthy{color:#22c55e;font-weight:600}.status-warning{color:#f59e0b;font-weight:600}.status-danger{color:#ef4444;font-weight:600}.metric-card{background:white;border:1px solid #e5e7eb;border-radius:8px;padding:16px;text-align:center;border-top:4px solid #3b82f6}.metric-label{font-size:12px;color:#6b7280;margin-bottom:8px}.metric-value{font-size:28px;font-weight:700;color:#1f2937}.info-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;margin:12px 0}.diagnosis-section{margin:24px 0;padding:20px;background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}.score-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}.score-excellent{background:#dcfce7;color:#166534}.score-good{background:#dbeafe;color:#1e40af}.score-average{background:#fef3c7;color:#92400e}.score-poor{background:#fee2e2;color:#991b1b}
+
+/* V2 餐饮店盈利AI诊断报告样式 */
+.store-overview-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.store-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.store-info-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.store-info-icon {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+}
+
+.health-level-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: 12px;
+}
+
+.health-excellent { background: #dcfce7; color: #166534; }
+.health-good { background: #dbeafe; color: #1e40af; }
+.health-warning { background: #fef3c7; color: #92400e; }
+.health-danger { background: #fee2e2; color: #991b1b; }
+
+/* 仪表盘样式 */
+.dashboard-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin: 24px 0;
+}
+
+.gauge-chart {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.radar-chart {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* 成本分析样式 */
+.cost-analysis-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin: 24px 0;
+}
+
+.pie-chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.alert-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.alert-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 8px;
+    border-left: 4px solid;
+}
+
+.alert-warning { background: #fef3c7; border-left-color: #f59e0b; }
+.alert-danger { background: #fee2e2; border-left-color: #ef4444; }
+.alert-info { background: #dbeafe; border-left-color: #3b82f6; }
+
+/* AI建议卡片样式 */
+.ai-suggestion-card {
+    background: white;
+    border-radius: 12px;
+    margin: 16px 0;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.suggestion-header {
+    padding: 20px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.suggestion-content {
+    padding: 20px;
+    display: none;
+}
+
+.suggestion-content.expanded {
+    display: block;
+}
+
+.priority-high { border-left: 4px solid #ef4444; }
+.priority-medium { border-left: 4px solid #f59e0b; }
+.priority-low { border-left: 4px solid #22c55e; }
+
+/* 管理员编辑器样式 */
+.admin-editor {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 24px 0;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.editor-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.editor-btn {
+    padding: 8px 16px;
+    border: 1px solid #d1d5db;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.editor-btn:hover {
+    background: #f9fafb;
+}
+
+.editor-btn.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+.editor-content {
+    min-height: 200px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 16px;
+    font-family: inherit;
+}
+
+/* 主题样式 */
+.theme-fresh {
+    --primary-color: #22c55e;
+    --secondary-color: #f0fdf4;
+    --accent-color: #16a34a;
+}
+
+.theme-professional {
+    --primary-color: #3b82f6;
+    --secondary-color: #f8fafc;
+    --accent-color: #1e40af;
+}
+
+.theme-business {
+    --primary-color: #f59e0b;
+    --secondary-color: #fffbeb;
+    --accent-color: #d97706;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .dashboard-container,
+    .cost-analysis-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .store-info-grid {
+        grid-template-columns: 1fr;
+    }
+}

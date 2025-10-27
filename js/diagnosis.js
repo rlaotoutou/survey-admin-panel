@@ -231,44 +231,538 @@ class RestaurantDiagnosisAdvanced {
         const totalCostCalc = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + 
                             (data.marketing_cost || 0) + (data.utility_cost || 0);
 
+        const overallScore = Math.round((kpi.location_match_score + kpi.marketing_health_score + kpi.content_marketing_index) / 3);
+        const healthLevel = this.getHealthLevel(overallScore);
+        
         return `
-            <div id="reportExport">
+            <div id="reportExport" class="diagnosis-report-v2">
+                ${this.generateStoreOverview(data, overallScore, healthLevel)}
+                ${this.generateDashboardSection(kpi, data)}
+                ${this.generateCostAnalysisSection(data, kpi)}
+                ${this.generateRevenueSection(data, kpi)}
+                ${this.generateOperationsSection(data, kpi)}
+                ${this.generateMarketingSection(data, kpi)}
+                ${this.generateAISuggestions(data, kpi)}
+                ${this.generateAdminEditor()}
+            </div>
+        `;
+    }
+
+    generateStoreOverview(data, overallScore, healthLevel) {
+        const businessType = data.business_type || '快餐';
+        const location = data.location || '一类商圈';
+        const area = data.area || 120;
+        const seats = data.seats || 50;
+        const monthlyRevenue = data.monthly_revenue || 150000;
+        const dailyCustomers = Math.round(monthlyRevenue / 30 / (data.avg_order_value || 50));
+        const decorationLevel = data.decoration_level || '中档';
+
+        return `
+            <div class="store-overview-card">
+                <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 700;">
+                    📍 ${data.store_name || '朝阳路快餐店'} ｜ ${businessType}业态 ｜ ${location}
+                </h2>
+                <div class="store-info-grid">
+                    <div class="store-info-item">
+                        <span class="store-info-icon">🏠</span>
+                        <span>面积：${area}㎡ ｜ 座位数：${seats}个</span>
+                    </div>
+                    <div class="store-info-item">
+                        <span class="store-info-icon">💰</span>
+                        <span>月营收：¥${this.formatNumber(monthlyRevenue)} ｜ 日均客流：${dailyCustomers}人</span>
+                    </div>
+                    <div class="store-info-item">
+                        <span class="store-info-icon">⚙️</span>
+                        <span>装修档次：${decorationLevel} ｜ 综合得分：${overallScore}分</span>
+                    </div>
+                </div>
+                <div class="health-level-badge ${healthLevel.class}">
+                    ${healthLevel.label}
+                </div>
+            </div>
+        `;
+    }
+
+    getHealthLevel(score) {
+        if (score >= 85) return { class: 'health-excellent', label: '优秀' };
+        if (score >= 70) return { class: 'health-good', label: '良好' };
+        if (score >= 60) return { class: 'health-warning', label: '待改善' };
+        return { class: 'health-danger', label: '警示' };
+    }
+
+    calculateCostControlScore(data) {
+        const foodCostRate = (data.food_cost || 0) / (data.monthly_revenue || 1) * 100;
+        const laborCostRate = (data.labor_cost || 0) / (data.monthly_revenue || 1) * 100;
+        const totalCostRate = foodCostRate + laborCostRate + (data.rent_cost || 0) / (data.monthly_revenue || 1) * 100;
+        
+        let score = 100;
+        if (foodCostRate > 40) score -= 20;
+        if (laborCostRate > 35) score -= 15;
+        if (totalCostRate > 85) score -= 25;
+        
+        return Math.max(0, Math.min(100, score));
+    }
+
+    calculateRevenueAbilityScore(data) {
+        const monthlyRevenue = data.monthly_revenue || 0;
+        const area = data.area || 1;
+        const seats = data.seats || 1;
+        
+        const revenuePerSqm = monthlyRevenue / area;
+        const revenuePerSeat = monthlyRevenue / seats;
+        
+        let score = 50;
+        if (revenuePerSqm > 1000) score += 20;
+        if (revenuePerSeat > 3000) score += 20;
+        if (monthlyRevenue > 200000) score += 10;
+        
+        return Math.max(0, Math.min(100, score));
+    }
+
+    calculateOperationEfficiencyScore(data) {
+        const dailyCustomers = Math.round((data.monthly_revenue || 0) / 30 / (data.avg_order_value || 50));
+        const seats = data.seats || 1;
+        const turnoverRate = dailyCustomers / seats;
+        
+        let score = 50;
+        if (turnoverRate > 2) score += 25;
+        if (turnoverRate > 3) score += 15;
+        if (dailyCustomers > 200) score += 10;
+        
+        return Math.max(0, Math.min(100, score));
+    }
+
+    calculateCustomerExperienceScore(data) {
+        const satisfaction = data.customer_satisfaction || 70;
+        const repeatRate = data.repeat_customer_rate || 30;
+        
+        let score = satisfaction * 0.7 + repeatRate * 0.3;
+        return Math.max(0, Math.min(100, score));
+    }
+
+    generateDashboardSection(kpi, data) {
+        const costControl = this.calculateCostControlScore(data);
+        const revenueAbility = this.calculateRevenueAbilityScore(data);
+        const operationEfficiency = this.calculateOperationEfficiencyScore(data);
+        const customerExperience = this.calculateCustomerExperienceScore(data);
+        const marketingAbility = kpi.marketing_health_score;
+
+        return `
                 <div class="diagnosis-section">
-                    <h3>一、综合健康度评分</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                        <div class="metric-card" style="border-top-color: #3b82f6;">
-                            <div class="metric-label">选址匹配度</div>
-                            <div class="metric-value" style="font-size: 32px; color: #3b82f6;">${kpi.location_match_score}分</div>
-                            <div class="score-badge ${this.getScoreBadgeClass(kpi.location_match_score)}" style="margin-top: 8px;">
-                                ${this.getScoreLabel(kpi.location_match_score)}
+                <h3>📊 核心经营指标总览</h3>
+                <div class="dashboard-container">
+                    <div class="gauge-chart">
+                        <h4>总盈利评分</h4>
+                        <div id="profitGauge" style="height: 200px;"></div>
+                        <div style="margin-top: 16px;">
+                            <div style="font-size: 32px; font-weight: 700; color: #3b82f6;">
+                                ${Math.round((costControl + revenueAbility + operationEfficiency + customerExperience) / 4)}分
+                            </div>
+                            <div style="color: #6b7280; margin-top: 8px;">
+                                综合经营健康度评分
+                        </div>
                             </div>
                         </div>
-                        <div class="metric-card" style="border-top-color: #10b981;">
-                            <div class="metric-label">营销健康度</div>
-                            <div class="metric-value" style="font-size: 32px; color: #10b981;">${kpi.marketing_health_score}分</div>
-                            <div class="score-badge ${this.getScoreBadgeClass(kpi.marketing_health_score)}" style="margin-top: 8px;">
-                                ${this.getScoreLabel(kpi.marketing_health_score)}
+                    <div class="radar-chart">
+                        <h4>五维能力雷达图</h4>
+                        <div id="radarChart" style="height: 200px;"></div>
+                        <div style="margin-top: 16px; font-size: 12px; color: #6b7280;">
+                            <div>成本控制力: ${costControl}分</div>
+                            <div>营收能力: ${revenueAbility}分</div>
+                            <div>运营效率: ${operationEfficiency}分</div>
+                            <div>客户体验: ${customerExperience}分</div>
+                            <div>营销能力: ${marketingAbility}分</div>
                             </div>
                         </div>
-                        <div class="metric-card" style="border-top-color: #f59e0b;">
-                            <div class="metric-label">内容营销指数</div>
-                            <div class="metric-value" style="font-size: 32px; color: #f59e0b;">${kpi.content_marketing_index}分</div>
-                            <div class="score-badge ${this.getScoreBadgeClass(kpi.content_marketing_index)}" style="margin-top: 8px;">
-                                ${this.getScoreLabel(kpi.content_marketing_index)}
                             </div>
                         </div>
-                        <div class="metric-card" style="border-top-color: #8b5cf6;">
-                            <div class="metric-label">综合评分</div>
-                            <div class="metric-value" style="font-size: 32px; color: #8b5cf6;">${Math.round((kpi.location_match_score + kpi.marketing_health_score + kpi.content_marketing_index) / 3)}分</div>
-                            <div class="score-badge ${this.getScoreBadgeClass(Math.round((kpi.location_match_score + kpi.marketing_health_score + kpi.content_marketing_index) / 3))}" style="margin-top: 8px;">
-                                ${this.getScoreLabel(Math.round((kpi.location_match_score + kpi.marketing_health_score + kpi.content_marketing_index) / 3))}
+        `;
+    }
+
+    generateCostAnalysisSection(data, kpi) {
+        const monthlyRevenue = data.monthly_revenue || 150000;
+        const foodCost = data.food_cost || 55000;
+        const laborCost = data.labor_cost || 46000;
+        const rentCost = data.rent_cost || 27600;
+        const utilityCost = data.utility_cost || 7350;
+        const marketingCost = data.marketing_cost || 13800;
+        
+        const foodCostRate = (foodCost / monthlyRevenue * 100).toFixed(1);
+        const laborCostRate = (laborCost / monthlyRevenue * 100).toFixed(1);
+        const rentCostRate = (rentCost / monthlyRevenue * 100).toFixed(1);
+        const utilityCostRate = (utilityCost / monthlyRevenue * 100).toFixed(1);
+        const marketingCostRate = (marketingCost / monthlyRevenue * 100).toFixed(1);
+        
+        const totalCostRate = parseFloat(foodCostRate) + parseFloat(laborCostRate) + parseFloat(rentCostRate) + 
+                             parseFloat(utilityCostRate) + parseFloat(marketingCostRate);
+
+        return `
+            <div class="diagnosis-section">
+                <h3>💰 成本结构分析</h3>
+                <div class="cost-analysis-container">
+                    <div class="pie-chart-container">
+                        <h4>成本结构分布</h4>
+                        <div id="costPieChart" style="height: 200px;"></div>
+                        <div style="margin-top: 16px; font-size: 14px;">
+                            <div style="display: flex; align-items: center; margin: 4px 0;">
+                                <span style="color: #3b82f6;">🍱</span>
+                                <span style="margin-left: 8px;">食材：${foodCostRate}%</span>
+                    </div>
+                            <div style="display: flex; align-items: center; margin: 4px 0;">
+                                <span style="color: #10b981;">👷</span>
+                                <span style="margin-left: 8px;">人力：${laborCostRate}%</span>
+                </div>
+                            <div style="display: flex; align-items: center; margin: 4px 0;">
+                                <span style="color: #f59e0b;">🏢</span>
+                                <span style="margin-left: 8px;">租金：${rentCostRate}%</span>
+                            </div>
+                            <div style="display: flex; align-items: center; margin: 4px 0;">
+                                <span style="color: #8b5cf6;">⚡</span>
+                                <span style="margin-left: 8px;">水电气：${utilityCostRate}%</span>
+                            </div>
+                            <div style="display: flex; align-items: center; margin: 4px 0;">
+                                <span style="color: #ef4444;">📣</span>
+                                <span style="margin-left: 8px;">营销：${marketingCostRate}%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert-panel">
+                        <h4>🚨 成本预警</h4>
+                        ${this.generateCostAlerts(foodCostRate, totalCostRate)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    generateCostAlerts(foodCostRate, totalCostRate) {
+        let alerts = [];
+        
+        if (parseFloat(foodCostRate) > 40) {
+            alerts.push(`
+                <div class="alert-item alert-warning">
+                    <span>⚠️</span>
+                    <div>
+                        <strong>食材成本率偏高（${foodCostRate}%）</strong><br>
+                        <small>建议优化供应链，寻找更优质的供应商</small>
+                    </div>
+                </div>
+            `);
+        }
+        
+        if (totalCostRate > 85) {
+            alerts.push(`
+                <div class="alert-item alert-danger">
+                    <span>🔴</span>
+                    <div>
+                        <strong>综合成本率${totalCostRate.toFixed(1)}%</strong><br>
+                        <small>盈利空间严重不足，需要立即优化成本结构</small>
+                    </div>
+                </div>
+            `);
+        }
+        
+        if (alerts.length === 0) {
+            alerts.push(`
+                <div class="alert-item alert-info">
+                    <span>✅</span>
+                    <div>
+                        <strong>成本控制良好</strong><br>
+                        <small>各项成本指标均在合理范围内</small>
+                    </div>
+                </div>
+            `);
+        }
+        
+        return alerts.join('');
+    }
+
+    generateRevenueSection(data, kpi) {
+        const monthlyRevenue = data.monthly_revenue || 150000;
+        const onlineRevenue = data.online_revenue || (monthlyRevenue * 0.3);
+        const offlineRevenue = monthlyRevenue - onlineRevenue;
+        const onlineRate = (onlineRevenue / monthlyRevenue * 100).toFixed(1);
+        
+        const area = data.area || 120;
+        const seats = data.seats || 50;
+        const dailyCustomers = Math.round(monthlyRevenue / 30 / (data.avg_order_value || 50));
+        
+        const revenuePerSqm = Math.round(monthlyRevenue / area);
+        const revenuePerSeat = Math.round(monthlyRevenue / seats);
+        const seatUtilization = Math.round(dailyCustomers / seats * 100);
+
+        return `
+            <div class="diagnosis-section">
+                <h3>📈 营收结构与盈利能力</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0;">
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>营收来源对比</h4>
+                        <div id="revenueChart" style="height: 200px;"></div>
+                        <div style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin: 8px 0;">
+                                <span>线下营收：¥${this.formatNumber(offlineRevenue)}</span>
+                                <span style="color: #3b82f6;">${(100 - onlineRate)}%</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin: 8px 0;">
+                                <span>线上营收：¥${this.formatNumber(onlineRevenue)}</span>
+                                <span style="color: #10b981;">${onlineRate}% ${onlineRate > 30 ? '↑' : '↓'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>关键指标卡片</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #3b82f6;">¥${revenuePerSqm}</div>
+                                <div style="font-size: 12px; color: #6b7280;">坪效</div>
+                            </div>
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #10b981;">¥${revenuePerSeat}</div>
+                                <div style="font-size: 12px; color: #6b7280;">人效</div>
+                            </div>
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">¥${data.avg_order_value || 50}</div>
+                                <div style="font-size: 12px; color: #6b7280;">客单价</div>
+                            </div>
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #8b5cf6;">${seatUtilization}%</div>
+                                <div style="font-size: 12px; color: #6b7280;">座位利用率</div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        `;
+    }
 
-                <div class="diagnosis-section">
-                    <h3>二、财务健康深度分析</h3>
+    generateOperationsSection(data, kpi) {
+        const dailyCustomers = Math.round((data.monthly_revenue || 0) / 30 / (data.avg_order_value || 50));
+        const seats = data.seats || 50;
+        const turnoverRate = (dailyCustomers / seats).toFixed(1);
+        const satisfaction = data.customer_satisfaction || 75;
+        const repeatRate = data.repeat_customer_rate || 30;
+
+        return `
+            <div class="diagnosis-section">
+                <h3>👥 运营效率与客户体验分析</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0;">
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>客流趋势分析</h4>
+                        <div id="customerTrendChart" style="height: 200px;"></div>
+                        <div style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin: 8px 0;">
+                                <span>日均客流：${dailyCustomers}人</span>
+                                <span style="color: #3b82f6;">${dailyCustomers > 150 ? '↑' : '↓'}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin: 8px 0;">
+                                <span>翻台率：${turnoverRate}次</span>
+                                <span style="color: #10b981;">${turnoverRate > 2 ? '↑' : '↓'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>客户体验评分</h4>
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            <div style="font-size: 48px; font-weight: 700; color: #3b82f6;">${satisfaction}</div>
+                            <div style="color: #6b7280;">客户满意度</div>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <div style="display: flex; justify-content: space-between; margin: 8px 0;">
+                                <span>复购率：${repeatRate}%</span>
+                                <span style="color: #10b981;">${repeatRate > 40 ? '↑' : '↓'}</span>
+                            </div>
+                            <div style="margin-top: 12px; padding: 12px; background: #f8fafc; border-radius: 8px; font-size: 14px;">
+                                <strong>体验分析：</strong>该店在服务满意度方面表现良好，但口味问题占比32%，建议重点优化主菜出品。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    generateMarketingSection(data, kpi) {
+        const videoCount = data.video_count || 80;
+        const liveCount = data.live_count || 20;
+        const marketingIndex = kpi.content_marketing_index || 75;
+
+        return `
+            <div class="diagnosis-section">
+                <h3>📱 内容营销与线上表现</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0;">
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>营销指标卡</h4>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #3b82f6;">${videoCount}条</div>
+                                <div style="font-size: 12px; color: #6b7280;">短视频发布量/月</div>
+                            </div>
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
+                                <div style="font-size: 20px; font-weight: 700; color: #10b981;">${liveCount}场</div>
+                                <div style="font-size: 12px; color: #6b7280;">直播场次/月</div>
+                            </div>
+                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px; grid-column: 1 / -1;">
+                                <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${marketingIndex}/100</div>
+                                <div style="font-size: 12px; color: #6b7280;">营销指数</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <h4>内容增长趋势</h4>
+                        <div id="marketingTrendChart" style="height: 200px;"></div>
+                        <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; font-size: 14px;">
+                            <strong>AI建议：</strong>当前内容产量充足，但建议提高视频质量并建立达人合作机制。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    generateAISuggestions(data, kpi) {
+        const suggestions = this.generateAISuggestionList(data, kpi);
+        
+        return `
+            <div class="diagnosis-section">
+                <h3>🧩 AI智能建议区</h3>
+                <div style="margin: 16px 0;">
+                    ${suggestions.map(suggestion => `
+                        <div class="ai-suggestion-card priority-${suggestion.priority}">
+                            <div class="suggestion-header" onclick="toggleSuggestion(this)">
+                                <div>
+                                    <strong>${suggestion.icon} ${suggestion.title}</strong>
+                                    <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                                        优先级：${suggestion.priority === 'high' ? '高' : suggestion.priority === 'medium' ? '中' : '低'}
+                                    </div>
+                                </div>
+                                <div style="color: #6b7280;">▼</div>
+                            </div>
+                            <div class="suggestion-content">
+                                <div style="margin-bottom: 12px;">
+                                    <strong>问题：</strong>${suggestion.problem}
+                                </div>
+                                <div style="margin-bottom: 12px;">
+                                    <strong>方案：</strong>${suggestion.solution}
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="color: #10b981; font-weight: 600;">
+                                        预期收益：${suggestion.expectedBenefit}
+                                    </div>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="editor-btn" onclick="editSuggestion(this)">✏️ 编辑</button>
+                                        <button class="editor-btn" onclick="copyToAdmin(this)">📋 复制到管理员区</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    generateAISuggestionList(data, kpi) {
+        const suggestions = [];
+        
+        // 成本优化建议
+        const foodCostRate = (data.food_cost || 0) / (data.monthly_revenue || 1) * 100;
+        if (foodCostRate > 40) {
+            suggestions.push({
+                icon: '🎯',
+                title: '成本优化方案',
+                priority: 'high',
+                problem: '食材成本率偏高（' + foodCostRate.toFixed(1) + '%），影响盈利能力',
+                solution: '优化供应商、引入自助点餐、节能设备改造',
+                expectedBenefit: '¥10,000/月'
+            });
+        }
+        
+        // 营收提升建议
+        const monthlyRevenue = data.monthly_revenue || 0;
+        if (monthlyRevenue < 200000) {
+            suggestions.push({
+                icon: '📈',
+                title: '营收提升策略',
+                priority: 'medium',
+                problem: '月营收偏低，需要提升客流量和客单价',
+                solution: '推出套餐优惠、增加外卖渠道、优化菜品结构',
+                expectedBenefit: '营收增长15%'
+            });
+        }
+        
+        // 客户体验优化
+        const satisfaction = data.customer_satisfaction || 0;
+        if (satisfaction < 80) {
+            suggestions.push({
+                icon: '👥',
+                title: '客户体验优化',
+                priority: 'medium',
+                problem: '客户满意度有待提升（' + satisfaction + '分）',
+                solution: '加强员工培训、优化服务流程、改善就餐环境',
+                expectedBenefit: '满意度提升至85分'
+            });
+        }
+        
+        // 营销推广建议
+        const marketingIndex = kpi.content_marketing_index || 0;
+        if (marketingIndex < 80) {
+            suggestions.push({
+                icon: '📱',
+                title: '营销推广优化',
+                priority: 'low',
+                problem: '内容营销指数偏低（' + marketingIndex + '分）',
+                solution: '增加短视频发布频率、建立达人合作、优化内容质量',
+                expectedBenefit: '营销指数提升至85分'
+            });
+        }
+        
+        return suggestions;
+    }
+
+    generateAdminEditor() {
+        return `
+            <div class="diagnosis-section">
+                <h3>✍️ 管理员专属建议区</h3>
+                <div class="admin-editor">
+                    <div class="editor-toolbar">
+                        <button class="editor-btn" onclick="formatText('bold')"><strong>B</strong></button>
+                        <button class="editor-btn" onclick="formatText('italic')"><em>I</em></button>
+                        <button class="editor-btn" onclick="formatText('underline')"><u>U</u></button>
+                        <button class="editor-btn" onclick="insertHeading()">H1</button>
+                        <button class="editor-btn" onclick="insertTable()">表格</button>
+                        <button class="editor-btn" onclick="insertIcon()">图标</button>
+                        <button class="editor-btn" onclick="saveAdminNotes()">保存</button>
+                        <button class="editor-btn" onclick="exportPDF()">导出PDF</button>
+                    </div>
+                    <div class="editor-content" contenteditable="true" id="adminEditor">
+                        <h3>立即行动项（1周内）</h3>
+                        <ul>
+                            <li>优化食材采购渠道，降低食材成本</li>
+                            <li>加强员工服务培训</li>
+                        </ul>
+                        
+                        <h3>短期改进项（本月）</h3>
+                        <ul>
+                            <li>推出新菜品吸引客户</li>
+                            <li>优化店内布局提升翻台率</li>
+                        </ul>
+                        
+                        <h3>中长期规划（3个月内）</h3>
+                        <ul>
+                            <li>考虑开设分店</li>
+                            <li>建立会员体系</li>
+                        </ul>
+                        
+                        <h3>特别提醒</h3>
+                        <p>请定期关注成本控制，确保盈利空间。</p>
+                        
+                        <h3>后续跟进日期</h3>
+                        <p>下次评估时间：${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
                     
                     <!-- 盈亏平衡点分析 -->
                     <div class="info-card mb-6">
@@ -2489,4 +2983,170 @@ class RestaurantDiagnosisAdvanced {
             improvement: potentialUtilization - currentUtilization
         };
     }
+}
+
+// JavaScript交互功能
+function toggleSuggestion(header) {
+    const content = header.nextElementSibling;
+    const arrow = header.querySelector('div:last-child');
+    
+    if (content.classList.contains('expanded')) {
+        content.classList.remove('expanded');
+        arrow.textContent = '▼';
+    } else {
+        content.classList.add('expanded');
+        arrow.textContent = '▲';
+    }
+}
+
+function editSuggestion(button) {
+    const suggestionCard = button.closest('.ai-suggestion-card');
+    const content = suggestionCard.querySelector('.suggestion-content');
+    
+    // 创建编辑模式
+    const problemDiv = content.querySelector('div:first-child');
+    const solutionDiv = content.querySelector('div:nth-child(2)');
+    
+    const problemText = problemDiv.textContent.replace('问题：', '').trim();
+    const solutionText = solutionDiv.textContent.replace('方案：', '').trim();
+    
+    problemDiv.innerHTML = `<strong>问题：</strong><input type="text" value="${problemText}" style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px;">`;
+    solutionDiv.innerHTML = `<strong>方案：</strong><textarea style="width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; min-height: 60px;">${solutionText}</textarea>`;
+    
+    button.textContent = '💾 保存';
+    button.onclick = () => saveSuggestion(suggestionCard);
+}
+
+function saveSuggestion(suggestionCard) {
+    const content = suggestionCard.querySelector('.suggestion-content');
+    const problemInput = content.querySelector('input');
+    const solutionTextarea = content.querySelector('textarea');
+    
+    const problemDiv = content.querySelector('div:first-child');
+    const solutionDiv = content.querySelector('div:nth-child(2)');
+    
+    problemDiv.innerHTML = `<strong>问题：</strong>${problemInput.value}`;
+    solutionDiv.innerHTML = `<strong>方案：</strong>${solutionTextarea.value}`;
+    
+    const saveButton = content.querySelector('button');
+    saveButton.textContent = '✏️ 编辑';
+    saveButton.onclick = () => editSuggestion(saveButton);
+}
+
+function copyToAdmin(button) {
+    const suggestionCard = button.closest('.ai-suggestion-card');
+    const title = suggestionCard.querySelector('strong').textContent;
+    const problem = suggestionCard.querySelector('.suggestion-content div:first-child').textContent.replace('问题：', '').trim();
+    const solution = suggestionCard.querySelector('.suggestion-content div:nth-child(2)').textContent.replace('方案：', '').trim();
+    
+    const adminEditor = document.getElementById('adminEditor');
+    const currentContent = adminEditor.innerHTML;
+    
+    adminEditor.innerHTML = currentContent + `
+        <div style="margin-top: 16px; padding: 12px; background: #f0f9ff; border-left: 4px solid #3b82f6; border-radius: 4px;">
+            <h4>${title}</h4>
+            <p><strong>问题：</strong>${problem}</p>
+            <p><strong>方案：</strong>${solution}</p>
+        </div>
+    `;
+    
+    // 滚动到管理员编辑器
+    adminEditor.scrollIntoView({ behavior: 'smooth' });
+}
+
+function formatText(command) {
+    document.execCommand(command, false, null);
+}
+
+function insertHeading() {
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const heading = document.createElement('h3');
+        heading.textContent = '新标题';
+        range.insertNode(heading);
+    }
+}
+
+function insertTable() {
+    const table = `
+        <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+            <tr>
+                <th style="border: 1px solid #ccc; padding: 8px; background: #f5f5f5;">项目</th>
+                <th style="border: 1px solid #ccc; padding: 8px; background: #f5f5f5;">金额</th>
+                <th style="border: 1px solid #ccc; padding: 8px; background: #f5f5f5;">备注</th>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #ccc; padding: 8px;">示例项目</td>
+                <td style="border: 1px solid #ccc; padding: 8px;">¥0</td>
+                <td style="border: 1px solid #ccc; padding: 8px;">示例备注</td>
+            </tr>
+        </table>
+    `;
+    
+    const adminEditor = document.getElementById('adminEditor');
+    adminEditor.innerHTML += table;
+}
+
+function insertIcon() {
+    const icons = ['💰', '📊', '🎯', '📈', '👥', '📱', '⚠️', '✅', '❌', '💡'];
+    const icon = icons[Math.floor(Math.random() * icons.length)];
+    
+    const adminEditor = document.getElementById('adminEditor');
+    adminEditor.innerHTML += `<span style="font-size: 20px; margin: 0 4px;">${icon}</span>`;
+}
+
+function saveAdminNotes() {
+    const adminEditor = document.getElementById('adminEditor');
+    const content = adminEditor.innerHTML;
+    
+    // 保存到本地存储
+    localStorage.setItem('adminNotes', content);
+    
+    // 显示保存成功提示
+    const button = event.target;
+    const originalText = button.textContent;
+    button.textContent = '✅ 已保存';
+    button.style.background = '#10b981';
+    
+    setTimeout(() => {
+        button.textContent = originalText;
+        button.style.background = '';
+    }, 2000);
+}
+
+function exportPDF() {
+    // 创建PDF导出功能
+    const reportContent = document.getElementById('reportExport');
+    
+    // 使用html2pdf库导出PDF
+    if (typeof html2pdf !== 'undefined') {
+        const opt = {
+            margin: 1,
+            filename: '餐饮店诊断报告.pdf',
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2 },
+            jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+        
+        html2pdf().set(opt).from(reportContent).save();
+    } else {
+        alert('PDF导出功能需要加载html2pdf库');
+    }
+}
+
+// 加载保存的管理员笔记
+document.addEventListener('DOMContentLoaded', function() {
+    const savedNotes = localStorage.getItem('adminNotes');
+    if (savedNotes) {
+        const adminEditor = document.getElementById('adminEditor');
+        if (adminEditor) {
+            adminEditor.innerHTML = savedNotes;
+        }
+    }
+});
+
+// 导出类
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = RestaurantDiagnosisAdvanced;
 }

@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         .loading {
             display: none;
@@ -378,6 +380,24 @@
 
                 <!-- AI诊断标签 -->
                 <div id="diagnosisTab" class="tab-content">
+                    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <label style="font-weight: 600; color: #374151;">主题选择：</label>
+                            <select id="themeSelector" onchange="changeTheme(this.value)" style="padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; background: white;">
+                                <option value="fresh">🌿 清新主题</option>
+                                <option value="professional">⚙️ 专业主题</option>
+                                <option value="business">💼 商务主题</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="exportToPDF()" style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                                📄 导出PDF
+                            </button>
+                            <button onclick="exportToImage()" style="padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
+                                🖼️ 导出图片
+                            </button>
+                        </div>
+                    </div>
                     <div id="reportExport">
                         <div id="diagnosisContent"></div>
                     </div>
@@ -2107,6 +2127,65 @@
 
             document.getElementById('diagnosisContent').innerHTML = html;
         }
+
+        // 主题切换功能
+        function changeTheme(theme) {
+            const reportExport = document.getElementById('reportExport');
+            reportExport.className = `diagnosis-report-v2 theme-${theme}`;
+            
+            // 保存主题选择
+            localStorage.setItem('selectedTheme', theme);
+        }
+
+        // PDF导出功能
+        function exportToPDF() {
+            const reportContent = document.getElementById('reportExport');
+            const storeName = currentRecord?.store_name || '餐饮店';
+            
+            if (typeof html2pdf !== 'undefined') {
+                const opt = {
+                    margin: 1,
+                    filename: `${storeName}_诊断报告_${new Date().toISOString().slice(0,10)}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+                
+                html2pdf().set(opt).from(reportContent).save();
+            } else {
+                alert('PDF导出功能需要加载html2pdf库');
+            }
+        }
+
+        // 图片导出功能
+        function exportToImage() {
+            const reportContent = document.getElementById('reportExport');
+            const storeName = currentRecord?.store_name || '餐饮店';
+            
+            html2canvas(reportContent, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: true
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `${storeName}_诊断报告_${new Date().toISOString().slice(0,10)}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }).catch(error => {
+                console.error('导出图片失败:', error);
+                alert('导出图片失败，请重试');
+            });
+        }
+
+        // 加载保存的主题
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedTheme = localStorage.getItem('selectedTheme') || 'fresh';
+            const themeSelector = document.getElementById('themeSelector');
+            if (themeSelector) {
+                themeSelector.value = savedTheme;
+                changeTheme(savedTheme);
+            }
+        });
 
         // 更新统计信息
         function updateStats() {

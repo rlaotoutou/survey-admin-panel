@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>餐饮店盈利AI诊断报告 v2 测试</title>
+    <script src="https://cdn.tailwindcss.com/3.3.3"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="stylesheet" href="css/styles.min.css">
+</head>
+<body class="bg-gray-50">
+    <div class="container mx-auto p-6">
+        <h1 class="text-3xl font-bold text-center mb-8">餐饮店盈利AI诊断报告 v2 测试</h1>
+        
+        <div class="mb-6 flex justify-center gap-4">
+            <button onclick="generateTestReport()" class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                生成测试报告
+            </button>
+            <button onclick="exportToPDF()" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                导出PDF
+            </button>
+        </div>
+
+        <div id="reportExport" class="diagnosis-report-v2 theme-fresh">
+            <div class="text-center text-gray-500 py-20">
+                点击"生成测试报告"按钮查看v2版本的诊断报告
+            </div>
+        </div>
+    </div>
+
+    <script src="js/diagnosis.js"></script>
+    <script>
+        const diagnosis = new RestaurantDiagnosisAdvanced();
+        
+        // 测试数据
+        const testData = {
+            id: 'TEST001',
+            store_name: '朝阳路快餐店',
+            business_type: '快餐',
+            location: '一类商圈',
+            area: 120,
+            seats: 50,
+            monthly_revenue: 150000,
+            food_cost: 55000,
+            labor_cost: 46000,
+            rent_cost: 27600,
+            utility_cost: 7350,
+            marketing_cost: 13800,
+            avg_order_value: 50,
+            customer_satisfaction: 75,
+            repeat_customer_rate: 30,
+            decoration_level: '中档',
+            video_count: 80,
+            live_count: 20
+        };
+
+        function generateTestReport() {
+            const kpi = diagnosis.calculateKPI(testData);
+            const benchmark = diagnosis.industryBenchmarks[testData.business_type] || diagnosis.industryBenchmarks['其他'];
+            
+            const html = diagnosis.generateReport(testData, kpi, benchmark);
+            document.getElementById('reportExport').innerHTML = html;
+        }
+
+        function exportToPDF() {
+            const reportContent = document.getElementById('reportExport');
+            
+            if (typeof html2pdf !== 'undefined') {
+                const opt = {
+                    margin: 1,
+                    filename: '餐饮店诊断报告_v2测试.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+                };
+                
+                html2pdf().set(opt).from(reportContent).save();
+            } else {
+                alert('PDF导出功能需要加载html2pdf库');
+            }
+        }
+    </script>
+</body>
+</html>
