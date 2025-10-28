@@ -495,6 +495,23 @@ class RestaurantDiagnosisAdvanced {
         };
     }
 
+    // 获取默认的盈利评分结果（当计算失败时使用）
+    getDefaultProfitabilityResult() {
+        return {
+            score: 0,
+            level: '数据不足',
+            levelClass: 'warning',
+            levelColor: '#9ca3af',
+            levelBg: '#f3f4f6',
+            description: '数据不足，无法计算盈利评分',
+            indicators: {},
+            normalized: {},
+            penalty: 0,
+            topFactors: [],
+            bottomFactors: []
+        };
+    }
+
     // 区间标准化函数（映射到 0-100）
     normalizeToRange(value, baseline, inverse = false) {
         const { min, ideal, max } = baseline;
@@ -522,6 +539,12 @@ class RestaurantDiagnosisAdvanced {
 
     // 计算总盈利评分
     calculateProfitabilityScore(data, kpi, historicalData = null) {
+        // 防御性检查
+        if (!data || !kpi) {
+            console.error('❌ calculateProfitabilityScore: data 或 kpi 参数缺失', { data, kpi });
+            return this.getDefaultProfitabilityResult();
+        }
+
         const monthlyRevenue = Number(data.monthly_revenue) || 0;
         const foodCost = Number(data.food_cost) || 0;
         const laborCost = Number(data.labor_cost) || 0;
@@ -538,9 +561,9 @@ class RestaurantDiagnosisAdvanced {
             net_margin: monthlyRevenue > 0 ? ((monthlyRevenue - totalCost) / monthlyRevenue * 100) : 0,
             gross_margin: monthlyRevenue > 0 ? ((monthlyRevenue - foodCost) / monthlyRevenue * 100) : 0,
             cost_rate: monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0,
-            online_boost: (kpi.takeaway_ratio || 0.3) * 100 * 0.15, // 简化：线上占比 * 拉动系数
-            price_volatility: Math.abs((kpi.avg_spending || 50) - 50) / 50 * 100, // 简化：与标准值偏离度
-            revenue_per_sqm: monthlyRevenue / area,
+            online_boost: ((kpi && kpi.takeaway_ratio) || 0.3) * 100 * 0.15, // 简化：线上占比 * 拉动系数
+            price_volatility: Math.abs(((kpi && kpi.avg_spending) || 50) - 50) / 50 * 100, // 简化：与标准值偏离度
+            revenue_per_sqm: area > 0 ? monthlyRevenue / area : 0,
             revenue_per_labor: laborCost > 0 ? monthlyRevenue / (laborCost / 5000) : 0, // 假设人均5000元/月
             resilience_months: 0 // 需要历史数据，暂时为0
         };
@@ -645,14 +668,14 @@ class RestaurantDiagnosisAdvanced {
             normalized,
             penalty,
             topFactors: topFactors.map(f => ({
-                name: factorNames[f.key],
-                score: Math.round(f.value),
-                impact: Math.round(f.impact * 100) / 100
+                name: factorNames[f.key] || f.key || '未知指标',
+                score: Math.round(f.value || 0),
+                impact: Math.round((f.impact || 0) * 100) / 100
             })),
             bottomFactors: bottomFactors.map(f => ({
-                name: factorNames[f.key],
-                score: Math.round(f.value),
-                impact: Math.round(f.impact * 100) / 100
+                name: factorNames[f.key] || f.key || '未知指标',
+                score: Math.round(f.value || 0),
+                impact: Math.round((f.impact || 0) * 100) / 100
             }))
         };
     }
@@ -886,7 +909,14 @@ class RestaurantDiagnosisAdvanced {
         }).join('');
 
         // 计算总盈利评分
-        const profitabilityResult = this.calculateProfitabilityScore(data, kpi);
+        let profitabilityResult;
+        try {
+            profitabilityResult = this.calculateProfitabilityScore(data, kpi);
+            console.log('✅ 总盈利评分计算成功:', profitabilityResult);
+        } catch (error) {
+            console.error('❌ 总盈利评分计算失败:', error);
+            profitabilityResult = this.getDefaultProfitabilityResult();
+        }
 
         return `
             <div class="diagnosis-section" style="background: #f9fafb; padding: 24px; border-radius: 16px; margin: 24px 0;">
@@ -927,30 +957,30 @@ class RestaurantDiagnosisAdvanced {
                             <div style="margin-bottom: 20px;">
                                 <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; opacity: 0.9;">🚀 关键拉动因子</div>
                                 <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; backdrop-filter: blur(10px);">
-                                    ${profitabilityResult.topFactors.map((factor, idx) => `
+                                    ${(profitabilityResult.topFactors && profitabilityResult.topFactors.length > 0) ? profitabilityResult.topFactors.map((factor, idx) => `
                                         <div style="display: flex; justify-content: space-between; align-items: center; ${idx > 0 ? 'margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2);' : ''}">
                                             <div>
-                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name}</div>
-                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">贡献度: ${factor.impact.toFixed(2)}</div>
+                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name || '未知'}</div>
+                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">贡献度: ${(factor.impact || 0).toFixed(2)}</div>
                                             </div>
-                                            <div style="font-size: 24px; font-weight: 700;">${factor.score}分</div>
+                                            <div style="font-size: 24px; font-weight: 700;">${factor.score || 0}分</div>
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div style="text-align: center; opacity: 0.7;">暂无数据</div>'}
                                 </div>
                             </div>
 
                             <div>
                                 <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; opacity: 0.9;">⚠️ 主要拖累因子</div>
                                 <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; backdrop-filter: blur(10px);">
-                                    ${profitabilityResult.bottomFactors.map((factor, idx) => `
+                                    ${(profitabilityResult.bottomFactors && profitabilityResult.bottomFactors.length > 0) ? profitabilityResult.bottomFactors.map((factor, idx) => `
                                         <div style="display: flex; justify-content: space-between; align-items: center; ${idx > 0 ? 'margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2);' : ''}">
                                             <div>
-                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name}</div>
-                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">影响度: ${factor.impact.toFixed(2)}</div>
+                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name || '未知'}</div>
+                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">影响度: ${(factor.impact || 0).toFixed(2)}</div>
                                             </div>
-                                            <div style="font-size: 24px; font-weight: 700;">${factor.score}分</div>
+                                            <div style="font-size: 24px; font-weight: 700;">${factor.score || 0}分</div>
                                         </div>
-                                    `).join('')}
+                                    `).join('') : '<div style="text-align: center; opacity: 0.7;">暂无数据</div>'}
                                 </div>
                             </div>
 
