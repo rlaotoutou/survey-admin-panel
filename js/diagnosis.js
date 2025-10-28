@@ -228,10 +228,24 @@ class RestaurantDiagnosisAdvanced {
 
     // 生成综合诊断报告
     generateReport(data, kpi, benchmark) {
-        const totalCostCalc = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) + 
+        // 防御性检查：确保 kpi 对象存在
+        if (!kpi) {
+            console.error('❌ generateReport: kpi 参数缺失或为空', kpi);
+            kpi = {
+                location_match_score: 70,
+                marketing_health_score: 70,
+                content_marketing_index: 70,
+                avg_spending: 50,
+                table_turnover: 3.0,
+                takeaway_ratio: 0.3,
+                rating: 4.2
+            };
+        }
+
+        const totalCostCalc = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) +
                             (data.marketing_cost || 0) + (data.utility_cost || 0);
 
-        const overallScore = Math.round((kpi.location_match_score + kpi.marketing_health_score + kpi.content_marketing_index) / 3);
+        const overallScore = Math.round(((kpi.location_match_score || 70) + (kpi.marketing_health_score || 70) + (kpi.content_marketing_index || 70)) / 3);
         const healthLevel = this.getHealthLevel(overallScore);
         
         return `
@@ -729,6 +743,17 @@ class RestaurantDiagnosisAdvanced {
     }
 
     generateDashboardSection(kpi, data) {
+        // 防御性检查：确保 kpi 对象存在
+        if (!kpi) {
+            console.error('❌ generateDashboardSection: kpi 参数缺失', kpi);
+            kpi = {
+                avg_spending: 50,
+                table_turnover: 3.0,
+                takeaway_ratio: 0.3,
+                rating: 4.2
+            };
+        }
+
         // 🔧 强制转换为数字，避免字符串拼接问题
         const monthlyRevenue = Number(data.monthly_revenue) || 0;
         const foodCost = Number(data.food_cost) || 0;
@@ -1212,7 +1237,7 @@ class RestaurantDiagnosisAdvanced {
     generateMarketingSection(data, kpi) {
         const videoCount = data.video_count || 80;
         const liveCount = data.live_count || 20;
-        const marketingIndex = kpi.content_marketing_index || 75;
+        const marketingIndex = (kpi && kpi.content_marketing_index) || 75;
 
         return `
             <div class="diagnosis-section">
@@ -1332,7 +1357,7 @@ class RestaurantDiagnosisAdvanced {
         }
         
         // 营销推广建议
-        const marketingIndex = kpi.content_marketing_index || 0;
+        const marketingIndex = (kpi && kpi.content_marketing_index) || 0;
         if (marketingIndex < 80) {
             suggestions.push({
                 icon: '📱',
