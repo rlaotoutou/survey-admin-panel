@@ -514,9 +514,39 @@ class RestaurantDiagnosisAdvanced {
     }
 
     generateDashboardSection(kpi, data) {
-        const monthlyRevenue = data.monthly_revenue || 0;
-        const totalCost = (data.food_cost || 0) + (data.labor_cost || 0) + (data.rent_cost || 0) +
-                         (data.marketing_cost || 0) + (data.utility_cost || 0);
+        // 🔧 强制转换为数字，避免字符串拼接问题
+        const monthlyRevenue = Number(data.monthly_revenue) || 0;
+        const foodCost = Number(data.food_cost) || 0;
+        const laborCost = Number(data.labor_cost) || 0;
+        const rentCost = Number(data.rent_cost) || 0;
+        const marketingCost = Number(data.marketing_cost) || 0;
+        const utilityCost = Number(data.utility_cost) || 0;
+
+        // ✅ 计算总成本（确保数字相加，不是字符串拼接）
+        const totalCost = foodCost + laborCost + rentCost + marketingCost + utilityCost;
+
+        // 📊 调试日志（在浏览器控制台查看）
+        console.log('💰 核心经营指标计算 - Dashboard KPI:', {
+            原始数据类型检查: {
+                monthly_revenue: typeof data.monthly_revenue,
+                food_cost: typeof data.food_cost,
+                labor_cost: typeof data.labor_cost
+            },
+            转换后的数值: {
+                monthlyRevenue: `${typeof monthlyRevenue} = ${monthlyRevenue}`,
+                foodCost: `${typeof foodCost} = ${foodCost}`,
+                laborCost: `${typeof laborCost} = ${laborCost}`,
+                rentCost: `${typeof rentCost} = ${rentCost}`,
+                marketingCost: `${typeof marketingCost} = ${marketingCost}`,
+                utilityCost: `${typeof utilityCost} = ${utilityCost}`,
+                totalCost: `${typeof totalCost} = ${totalCost}`
+            },
+            关键指标计算结果: {
+                毛利率: ((monthlyRevenue - foodCost) / monthlyRevenue * 100).toFixed(2) + '%',
+                净利率: ((monthlyRevenue - totalCost) / monthlyRevenue * 100).toFixed(2) + '%',
+                综合成本率: (totalCost / monthlyRevenue * 100).toFixed(2) + '%'
+            }
+        });
 
         // 计算9个核心KPI
         const kpis = [
@@ -537,39 +567,39 @@ class RestaurantDiagnosisAdvanced {
                 id: 'gross_margin',
                 name: '毛利率',
                 icon: '📊',
-                value: ((monthlyRevenue - (data.food_cost || 0)) / monthlyRevenue * 100) || 0,
+                value: monthlyRevenue > 0 ? ((monthlyRevenue - foodCost) / monthlyRevenue * 100) : 0,
                 unit: '%',
                 format: val => val.toFixed(1) + '%',
                 mom: 1.2,
                 yoy: -2.3,
                 baseline: 58,
-                trend: this.generateTrendData(((monthlyRevenue - (data.food_cost || 0)) / monthlyRevenue * 100) || 0, 0.05),
+                trend: this.generateTrendData(monthlyRevenue > 0 ? ((monthlyRevenue - foodCost) / monthlyRevenue * 100) : 0, 0.05),
                 color: '#10b981'
             },
             {
                 id: 'net_margin',
                 name: '净利率',
                 icon: '💎',
-                value: ((monthlyRevenue - totalCost) / monthlyRevenue * 100) || 0,
+                value: monthlyRevenue > 0 ? ((monthlyRevenue - totalCost) / monthlyRevenue * 100) : 0,
                 unit: '%',
                 format: val => val.toFixed(1) + '%',
                 mom: -0.8,
                 yoy: 3.5,
                 baseline: 15,
-                trend: this.generateTrendData(((monthlyRevenue - totalCost) / monthlyRevenue * 100) || 0, 0.08),
+                trend: this.generateTrendData(monthlyRevenue > 0 ? ((monthlyRevenue - totalCost) / monthlyRevenue * 100) : 0, 0.08),
                 color: '#8b5cf6'
             },
             {
                 id: 'cost_rate',
                 name: '综合成本率',
                 icon: '📉',
-                value: (totalCost / monthlyRevenue * 100) || 0,
+                value: monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0,
                 unit: '%',
                 format: val => val.toFixed(1) + '%',
                 mom: 2.1,
                 yoy: -1.5,
                 baseline: 75,
-                trend: this.generateTrendData((totalCost / monthlyRevenue * 100) || 0, 0.05),
+                trend: this.generateTrendData(monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0, 0.05),
                 color: '#f59e0b',
                 inverse: true // 越低越好
             },
