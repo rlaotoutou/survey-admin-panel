@@ -673,12 +673,6 @@ class RestaurantDiagnosisAdvanced {
         // 生成KPI卡片HTML
         const kpiCards = kpis.map(kpi => {
             const anomaly = this.detectAnomaly(kpi.value, kpi.baseline);
-            const momClass = kpi.mom > 0 ? (kpi.inverse ? 'text-red-600' : 'text-green-600') :
-                            kpi.mom < 0 ? (kpi.inverse ? 'text-green-600' : 'text-red-600') : 'text-gray-600';
-            const yoyClass = kpi.yoy > 0 ? (kpi.inverse ? 'text-red-600' : 'text-green-600') :
-                            kpi.yoy < 0 ? (kpi.inverse ? 'text-green-600' : 'text-red-600') : 'text-gray-600';
-            const momIcon = kpi.mom > 0 ? '↑' : kpi.mom < 0 ? '↓' : '→';
-            const yoyIcon = kpi.yoy > 0 ? '↑' : kpi.yoy < 0 ? '↓' : '→';
 
             return `
                 <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-left: ${anomaly.border}; transition: all 0.3s;">
@@ -692,20 +686,8 @@ class RestaurantDiagnosisAdvanced {
                     </div>
 
                     <!-- 主值 -->
-                    <div style="font-size: 32px; font-weight: 700; color: ${kpi.color}; margin-bottom: 8px; line-height: 1;">
+                    <div style="font-size: 32px; font-weight: 700; color: ${kpi.color}; margin-bottom: 16px; line-height: 1;">
                         ${kpi.format(kpi.value)}
-                    </div>
-
-                    <!-- 同比环比 -->
-                    <div style="display: flex; gap: 12px; margin-bottom: 12px; font-size: 12px;">
-                        <div class="${momClass}" style="display: flex; align-items: center; gap: 2px;">
-                            <span>环比</span>
-                            <span style="font-weight: 600;">${momIcon} ${Math.abs(kpi.mom).toFixed(1)}%</span>
-                        </div>
-                        <div class="${yoyClass}" style="display: flex; align-items: center; gap: 2px;">
-                            <span>同比</span>
-                            <span style="font-weight: 600;">${yoyIcon} ${Math.abs(kpi.yoy).toFixed(1)}%</span>
-                        </div>
                     </div>
 
                     <!-- 趋势线 -->
@@ -740,19 +722,6 @@ class RestaurantDiagnosisAdvanced {
                 <!-- 九宫格KPI卡片 -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
                     ${kpiCards}
-                </div>
-
-                <!-- 数据说明 -->
-                <div style="margin-top: 20px; padding: 16px; background: white; border-radius: 8px; border-left: 4px solid #3b82f6;">
-                    <div style="font-size: 12px; color: #6b7280; line-height: 1.8;">
-                        <strong style="color: #1f2937;">📌 数据口径说明：</strong><br>
-                        • 环比：与上月同期对比 | 同比：与去年同月对比<br>
-                        • 毛利率 = (营收 - 食材成本) / 营收 × 100%<br>
-                        • 净利率 = (营收 - 全部经营性成本) / 营收 × 100%<br>
-                        • 综合成本率 = (食材 + 人力 + 租金 + 水电气 + 营销) / 营收 × 100%<br>
-                        • 线上占比 = 线上营收 / 总营收 × 100%<br>
-                        • 异常检测：当指标偏离行业基线 ±15% 时预警，±30% 时标记为异常
-                    </div>
                 </div>
             </div>
         `;
