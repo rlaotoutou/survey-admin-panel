@@ -460,9 +460,201 @@ class RestaurantDiagnosisAdvanced {
     calculateCustomerExperienceScore(data) {
         const satisfaction = data.customer_satisfaction || 70;
         const repeatRate = data.repeat_customer_rate || 30;
-        
+
         let score = satisfaction * 0.7 + repeatRate * 0.3;
         return Math.max(0, Math.min(100, score));
+    }
+
+    // ==================== 总盈利评分算法 (Profitability Score) ====================
+
+    // 行业基线带宽配置（正餐+中档+二类商场档位）
+    getProfitabilityBaselines() {
+        return {
+            net_margin: { min: 5, ideal: 15, max: 25 },        // 净利率 %
+            gross_margin: { min: 55, ideal: 65, max: 75 },     // 毛利率 %
+            cost_rate: { min: 65, ideal: 75, max: 85 },        // 综合成本率 % (反向)
+            online_boost: { min: 0, ideal: 5, max: 15 },       // 线上对毛利的拉动 %
+            price_volatility: { min: 0, ideal: 5, max: 15 },   // 客单价波动 % (反向)
+            revenue_per_sqm: { min: 800, ideal: 1200, max: 2000 }, // 坪效 元/㎡
+            revenue_per_labor: { min: 25000, ideal: 35000, max: 50000 }, // 人效 元/人
+            resilience_months: { min: -3, ideal: 0, max: 3 }   // 收益韧性 连续下行月数 (反向)
+        };
+    }
+
+    // 权重配置（分层权重：财务主导 + 效率与结构校正）
+    getProfitabilityWeights() {
+        return {
+            net_margin: 0.25,          // 净利率 - 核心权重
+            gross_margin: 0.20,        // 毛利率 - 核心权重
+            cost_rate: 0.20,           // 综合成本率 - 核心权重
+            online_boost: 0.08,        // 线上拉动
+            price_volatility: 0.07,    // 价格稳定性
+            revenue_per_sqm: 0.10,     // 坪效
+            revenue_per_labor: 0.10    // 人效
+            // resilience_months 作为惩罚项，不计入权重
+        };
+    }
+
+    // 区间标准化函数（映射到 0-100）
+    normalizeToRange(value, baseline, inverse = false) {
+        const { min, ideal, max } = baseline;
+
+        if (inverse) {
+            // 反向指标（越低越好，如成本率）
+            if (value <= min) return 100;
+            if (value >= max) return 0;
+            if (value <= ideal) {
+                return 100 - ((value - min) / (ideal - min)) * 20; // min到ideal: 100-80
+            } else {
+                return 80 - ((value - ideal) / (max - ideal)) * 80; // ideal到max: 80-0
+            }
+        } else {
+            // 正向指标（越高越好）
+            if (value <= min) return 0;
+            if (value >= max) return 100;
+            if (value <= ideal) {
+                return ((value - min) / (ideal - min)) * 80; // min到ideal: 0-80
+            } else {
+                return 80 + ((value - ideal) / (max - ideal)) * 20; // ideal到max: 80-100
+            }
+        }
+    }
+
+    // 计算总盈利评分
+    calculateProfitabilityScore(data, kpi, historicalData = null) {
+        const monthlyRevenue = Number(data.monthly_revenue) || 0;
+        const foodCost = Number(data.food_cost) || 0;
+        const laborCost = Number(data.labor_cost) || 0;
+        const rentCost = Number(data.rent_cost) || 0;
+        const marketingCost = Number(data.marketing_cost) || 0;
+        const utilityCost = Number(data.utility_cost) || 0;
+        const totalCost = foodCost + laborCost + rentCost + marketingCost + utilityCost;
+
+        const area = Number(data.store_area) || 120;
+        const seats = Number(data.seats) || 50;
+
+        // 计算各项指标
+        const indicators = {
+            net_margin: monthlyRevenue > 0 ? ((monthlyRevenue - totalCost) / monthlyRevenue * 100) : 0,
+            gross_margin: monthlyRevenue > 0 ? ((monthlyRevenue - foodCost) / monthlyRevenue * 100) : 0,
+            cost_rate: monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0,
+            online_boost: (kpi.takeaway_ratio || 0.3) * 100 * 0.15, // 简化：线上占比 * 拉动系数
+            price_volatility: Math.abs((kpi.avg_spending || 50) - 50) / 50 * 100, // 简化：与标准值偏离度
+            revenue_per_sqm: monthlyRevenue / area,
+            revenue_per_labor: laborCost > 0 ? monthlyRevenue / (laborCost / 5000) : 0, // 假设人均5000元/月
+            resilience_months: 0 // 需要历史数据，暂时为0
+        };
+
+        // 获取基线和权重
+        const baselines = this.getProfitabilityBaselines();
+        const weights = this.getProfitabilityWeights();
+
+        // 标准化各项指标
+        const normalized = {
+            net_margin: this.normalizeToRange(indicators.net_margin, baselines.net_margin, false),
+            gross_margin: this.normalizeToRange(indicators.gross_margin, baselines.gross_margin, false),
+            cost_rate: this.normalizeToRange(indicators.cost_rate, baselines.cost_rate, true),
+            online_boost: this.normalizeToRange(indicators.online_boost, baselines.online_boost, false),
+            price_volatility: this.normalizeToRange(indicators.price_volatility, baselines.price_volatility, true),
+            revenue_per_sqm: this.normalizeToRange(indicators.revenue_per_sqm, baselines.revenue_per_sqm, false),
+            revenue_per_labor: this.normalizeToRange(indicators.revenue_per_labor, baselines.revenue_per_labor, false)
+        };
+
+        // 加权求和
+        let weightedScore = 0;
+        for (const key in weights) {
+            weightedScore += normalized[key] * weights[key];
+        }
+
+        // 惩罚机制
+        let penalty = 0;
+
+        // 1. 关键指标突破警戒线惩罚
+        if (indicators.net_margin < 5) {
+            penalty += 10; // 净利率低于5%
+        }
+        if (indicators.cost_rate > 85) {
+            penalty += 10; // 成本率高于85%
+        }
+
+        // 2. 连续下行惩罚（需要历史数据，这里简化处理）
+        if (indicators.resilience_months < -2) {
+            penalty += 5 * Math.abs(indicators.resilience_months + 2); // 每多一个月惩罚5分
+        }
+
+        // 最终评分
+        const finalScore = Math.max(0, Math.min(100, weightedScore - penalty));
+
+        // 等级标签
+        let level, levelClass, levelColor, levelBg, description;
+        if (finalScore >= 80) {
+            level = '优秀';
+            levelClass = 'excellent';
+            levelColor = '#10b981';
+            levelBg = '#d1fae5';
+            description = '盈利能力优秀，经营体质健康';
+        } else if (finalScore >= 65) {
+            level = '良好';
+            levelClass = 'good';
+            levelColor = '#3b82f6';
+            levelBg = '#dbeafe';
+            description = '盈利能力良好，有提升空间';
+        } else if (finalScore >= 50) {
+            level = '警戒';
+            levelClass = 'warning';
+            levelColor = '#f59e0b';
+            levelBg = '#fef3c7';
+            description = '盈利能力偏弱，需重点关注';
+        } else {
+            level = '危险';
+            levelClass = 'danger';
+            levelColor = '#ef4444';
+            levelBg = '#fee2e2';
+            description = '盈利能力严重不足，需紧急改善';
+        }
+
+        // 识别关键拉动/拖累因子
+        const factors = [];
+        const sortedNormalized = Object.entries(normalized)
+            .map(([key, value]) => ({ key, value, weight: weights[key] || 0, impact: value * (weights[key] || 0) }))
+            .sort((a, b) => b.impact - a.impact);
+
+        // 前2个拉动因子
+        const topFactors = sortedNormalized.slice(0, 2);
+        // 后2个拖累因子
+        const bottomFactors = sortedNormalized.slice(-2).reverse();
+
+        const factorNames = {
+            net_margin: '净利率',
+            gross_margin: '毛利率',
+            cost_rate: '综合成本率',
+            online_boost: '线上拉动',
+            price_volatility: '价格稳定性',
+            revenue_per_sqm: '坪效',
+            revenue_per_labor: '人效'
+        };
+
+        return {
+            score: Math.round(finalScore),
+            level,
+            levelClass,
+            levelColor,
+            levelBg,
+            description,
+            indicators,
+            normalized,
+            penalty,
+            topFactors: topFactors.map(f => ({
+                name: factorNames[f.key],
+                score: Math.round(f.value),
+                impact: Math.round(f.impact * 100) / 100
+            })),
+            bottomFactors: bottomFactors.map(f => ({
+                name: factorNames[f.key],
+                score: Math.round(f.value),
+                impact: Math.round(f.impact * 100) / 100
+            }))
+        };
     }
 
     // 生成模拟历史趋势数据（12周）
@@ -686,18 +878,15 @@ class RestaurantDiagnosisAdvanced {
                     </div>
 
                     <!-- 主值 -->
-                    <div style="font-size: 32px; font-weight: 700; color: ${kpi.color}; margin-bottom: 16px; line-height: 1;">
+                    <div style="font-size: 32px; font-weight: 700; color: ${kpi.color}; line-height: 1;">
                         ${kpi.format(kpi.value)}
-                    </div>
-
-                    <!-- 趋势线 -->
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #f3f4f6;">
-                        ${this.generateSparkline(kpi.trend, kpi.color)}
-                        <div style="font-size: 10px; color: #9ca3af; margin-top: 4px;">近12周趋势</div>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // 计算总盈利评分
+        const profitabilityResult = this.calculateProfitabilityScore(data, kpi);
 
         return `
             <div class="diagnosis-section" style="background: #f9fafb; padding: 24px; border-radius: 16px; margin: 24px 0;">
@@ -716,6 +905,67 @@ class RestaurantDiagnosisAdvanced {
                             <span style="width: 12px; height: 12px; background: #ef4444; border-radius: 2px;"></span>
                             异常
                         </span>
+                    </div>
+                </div>
+
+                <!-- 总盈利评分卡片 -->
+                <div style="background: linear-gradient(135deg, ${profitabilityResult.levelColor} 0%, ${profitabilityResult.levelColor}dd 100%); border-radius: 16px; padding: 32px; margin-bottom: 24px; color: white; box-shadow: 0 8px 24px rgba(0,0,0,0.15);">
+                    <div style="display: grid; grid-template-columns: 2fr 3fr; gap: 32px;">
+                        <!-- 左侧：评分展示 -->
+                        <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(255,255,255,0.15); border-radius: 12px; padding: 24px; backdrop-filter: blur(10px);">
+                            <div style="font-size: 16px; font-weight: 500; margin-bottom: 12px; opacity: 0.9;">总盈利评分</div>
+                            <div style="font-size: 72px; font-weight: 700; line-height: 1; margin-bottom: 12px;">${profitabilityResult.score}</div>
+                            <div style="font-size: 14px; opacity: 0.8; margin-bottom: 16px;">满分100分</div>
+                            <div style="display: inline-block; padding: 8px 20px; background: rgba(255,255,255,0.95); color: ${profitabilityResult.levelColor}; border-radius: 20px; font-weight: 600; font-size: 16px;">
+                                ${profitabilityResult.level}
+                            </div>
+                            <div style="margin-top: 12px; font-size: 12px; opacity: 0.9; text-align: center;">${profitabilityResult.description}</div>
+                        </div>
+
+                        <!-- 右侧：拉动与拖累因子 -->
+                        <div>
+                            <div style="margin-bottom: 20px;">
+                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; opacity: 0.9;">🚀 关键拉动因子</div>
+                                <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; backdrop-filter: blur(10px);">
+                                    ${profitabilityResult.topFactors.map((factor, idx) => `
+                                        <div style="display: flex; justify-content: space-between; align-items: center; ${idx > 0 ? 'margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2);' : ''}">
+                                            <div>
+                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name}</div>
+                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">贡献度: ${factor.impact.toFixed(2)}</div>
+                                            </div>
+                                            <div style="font-size: 24px; font-weight: 700;">${factor.score}分</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; opacity: 0.9;">⚠️ 主要拖累因子</div>
+                                <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; backdrop-filter: blur(10px);">
+                                    ${profitabilityResult.bottomFactors.map((factor, idx) => `
+                                        <div style="display: flex; justify-content: space-between; align-items: center; ${idx > 0 ? 'margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.2);' : ''}">
+                                            <div>
+                                                <div style="font-weight: 600;">${idx + 1}. ${factor.name}</div>
+                                                <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">影响度: ${factor.impact.toFixed(2)}</div>
+                                            </div>
+                                            <div style="font-size: 24px; font-weight: 700;">${factor.score}分</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            ${profitabilityResult.penalty > 0 ? `
+                                <div style="margin-top: 16px; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; backdrop-filter: blur(10px);">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-size: 20px;">🚨</span>
+                                        <div>
+                                            <div style="font-weight: 600; font-size: 13px;">警戒惩罚</div>
+                                            <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">扣除 ${profitabilityResult.penalty} 分（关键指标低于警戒线）</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : ''}
+                        </div>
                     </div>
                 </div>
 
