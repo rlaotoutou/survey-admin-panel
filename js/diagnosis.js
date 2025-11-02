@@ -655,7 +655,7 @@ class RestaurantDiagnosisAdvanced {
             finalScore = 0;
         }
 
-        console.log('✅ 最终评分:', finalScore);
+        console.log('✅ 最终评分 (finalScore):', finalScore, '类型:', typeof finalScore, 'isNaN:', isNaN(finalScore));
 
         // 等级标签 - 根据 finalScore 区间分类
         let level, levelClass, levelColor, levelBg, description;
@@ -706,7 +706,7 @@ class RestaurantDiagnosisAdvanced {
             revenue_per_labor: '人效'
         };
 
-        return {
+        const result = {
             score: Math.round(finalScore),
             level,
             levelClass,
@@ -727,6 +727,10 @@ class RestaurantDiagnosisAdvanced {
                 impact: Math.round((f.impact || 0) * 100) / 100
             }))
         };
+
+        console.log('🎯 calculateProfitabilityScore 返回值:', result);
+
+        return result;
     }
 
     // 生成模拟历史趋势数据（12周）
