@@ -719,6 +719,8 @@ class RestaurantDiagnosisAdvanced {
             revenue_per_labor: '人效'
         };
 
+        console.log('📍 准备构建返回对象, finalScore=', finalScore, 'level=', level);
+
         const result = {
             score: Math.round(finalScore),
             level,
@@ -742,6 +744,7 @@ class RestaurantDiagnosisAdvanced {
         };
 
         console.log('🎯 calculateProfitabilityScore 返回值:', result);
+        console.log('🎯 返回对象的 score:', result.score, 'level:', result.level);
 
         return result;
     }
@@ -1019,12 +1022,10 @@ class RestaurantDiagnosisAdvanced {
         }
 
         // 🔧 添加调试信息到结果
-        debugInfo.盈利评分结果 = {
-            score: profitabilityResult?.score,
-            level: profitabilityResult?.level,
-            'topFactors长度': profitabilityResult?.topFactors?.length,
-            'bottomFactors长度': profitabilityResult?.bottomFactors?.length
-        };
+        debugInfo.盈利评分结果 = profitabilityResult || { error: '结果为空或undefined' };
+        debugInfo.盈利评分类型 = typeof profitabilityResult;
+        debugInfo.是否为null = profitabilityResult === null;
+        debugInfo.是否为undefined = profitabilityResult === undefined;
 
         return `
             <!-- 🔧 临时调试信息框 (问题解决后可删除) -->
@@ -1044,6 +1045,11 @@ class RestaurantDiagnosisAdvanced {
                     </details>
                     <details open style="margin-top: 12px;">
                         <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">💰 盈利评分结果</summary>
+                        <div style="background: ${debugInfo.盈利评分类型 === 'undefined' ? '#fee2e2' : '#f0fdf4'}; padding: 8px; border-radius: 4px; margin: 8px 0;">
+                            <div>类型: <strong>${debugInfo.盈利评分类型}</strong></div>
+                            <div>是否为null: <strong>${debugInfo.是否为null}</strong></div>
+                            <div>是否为undefined: <strong>${debugInfo.是否为undefined}</strong></div>
+                        </div>
                         <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.盈利评分结果, null, 2)}</pre>
                     </details>
                 </div>
