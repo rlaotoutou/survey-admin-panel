@@ -530,25 +530,45 @@ class RestaurantDiagnosisAdvanced {
     normalizeToRange(value, baseline, inverse = false) {
         const { min, ideal, max } = baseline;
 
+        // 🔧 防御性检查：如果 value 不是有效数字，返回 0
+        if (!isFinite(value) || isNaN(value)) {
+            console.warn('⚠️ normalizeToRange 收到无效值:', value);
+            return 0;
+        }
+
+        let result;
+
         if (inverse) {
             // 反向指标（越低越好，如成本率）
-            if (value <= min) return 100;
-            if (value >= max) return 0;
-            if (value <= ideal) {
-                return 100 - ((value - min) / (ideal - min)) * 20; // min到ideal: 100-80
+            if (value <= min) {
+                result = 100;
+            } else if (value >= max) {
+                result = 0;
+            } else if (value <= ideal) {
+                result = 100 - ((value - min) / (ideal - min)) * 20; // min到ideal: 100-80
             } else {
-                return 80 - ((value - ideal) / (max - ideal)) * 80; // ideal到max: 80-0
+                result = 80 - ((value - ideal) / (max - ideal)) * 80; // ideal到max: 80-0
             }
         } else {
             // 正向指标（越高越好）
-            if (value <= min) return 0;
-            if (value >= max) return 100;
-            if (value <= ideal) {
-                return ((value - min) / (ideal - min)) * 80; // min到ideal: 0-80
+            if (value <= min) {
+                result = 0;
+            } else if (value >= max) {
+                result = 100;
+            } else if (value <= ideal) {
+                result = ((value - min) / (ideal - min)) * 80; // min到ideal: 0-80
             } else {
-                return 80 + ((value - ideal) / (max - ideal)) * 20; // ideal到max: 80-100
+                result = 80 + ((value - ideal) / (max - ideal)) * 20; // ideal到max: 80-100
             }
         }
+
+        // 🔧 确保返回值是有效数字
+        if (!isFinite(result) || isNaN(result)) {
+            console.error('❌ normalizeToRange 计算出 NaN:', { value, baseline, inverse, result });
+            return 0;
+        }
+
+        return result;
     }
 
     // 计算总盈利评分
