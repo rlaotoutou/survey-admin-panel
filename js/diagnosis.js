@@ -579,6 +579,19 @@ class RestaurantDiagnosisAdvanced {
             return this.getDefaultProfitabilityResult();
         }
 
+        console.log('🔍 calculateProfitabilityScore 输入参数:', {
+            data字段: Object.keys(data),
+            kpi字段: Object.keys(kpi),
+            关键数据: {
+                store_area: data.store_area,
+                seats: data.seats,
+                total_customers: data.total_customers,
+                online_revenue: data.online_revenue,
+                'kpi.avg_spending': kpi.avg_spending,
+                'kpi.takeaway_ratio': kpi.takeaway_ratio
+            }
+        });
+
         const monthlyRevenue = Number(data.monthly_revenue) || 0;
         const foodCost = Number(data.food_cost) || 0;
         const laborCost = Number(data.labor_cost) || 0;
