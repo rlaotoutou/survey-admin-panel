@@ -985,6 +985,29 @@ class RestaurantDiagnosisAdvanced {
             `;
         }).join('');
 
+        // 🔧 临时调试：收集所有关键数据
+        const debugInfo = {
+            基础数据: {
+                monthlyRevenue,
+                foodCost,
+                laborCost,
+                rentCost,
+                marketingCost,
+                utilityCost,
+                totalCost,
+                store_area: data.store_area,
+                seats: data.seats,
+                total_customers: data.total_customers,
+                online_revenue: data.online_revenue
+            },
+            KPI数据: {
+                'kpi.avg_spending': kpi?.avg_spending,
+                'kpi.takeaway_ratio': kpi?.takeaway_ratio,
+                'kpi.table_turnover': kpi?.table_turnover,
+                'kpi.rating': kpi?.rating
+            }
+        };
+
         // 计算总盈利评分
         let profitabilityResult;
         try {
@@ -995,7 +1018,37 @@ class RestaurantDiagnosisAdvanced {
             profitabilityResult = this.getDefaultProfitabilityResult();
         }
 
+        // 🔧 添加调试信息到结果
+        debugInfo.盈利评分结果 = {
+            score: profitabilityResult?.score,
+            level: profitabilityResult?.level,
+            'topFactors长度': profitabilityResult?.topFactors?.length,
+            'bottomFactors长度': profitabilityResult?.bottomFactors?.length
+        };
+
         return `
+            <!-- 🔧 临时调试信息框 (问题解决后可删除) -->
+            <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin: 20px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <h3 style="margin: 0; color: #856404;">🔍 临时调试信息（解决后可删除）</h3>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background: #ffc107; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;">隐藏</button>
+                </div>
+                <div style="background: white; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 13px;">
+                    <details open>
+                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">📦 基础数据</summary>
+                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.基础数据, null, 2)}</pre>
+                    </details>
+                    <details open style="margin-top: 12px;">
+                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">📊 KPI数据</summary>
+                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.KPI数据, null, 2)}</pre>
+                    </details>
+                    <details open style="margin-top: 12px;">
+                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">💰 盈利评分结果</summary>
+                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.盈利评分结果, null, 2)}</pre>
+                    </details>
+                </div>
+            </div>
+
             <div class="diagnosis-section" style="background: #f9fafb; padding: 24px; border-radius: 16px; margin: 24px 0;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h3 style="margin: 0; font-size: 24px; font-weight: 700; color: #1f2937;">📊 核心经营指标总览</h3>
