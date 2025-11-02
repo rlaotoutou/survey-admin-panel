@@ -603,6 +603,13 @@ class RestaurantDiagnosisAdvanced {
             weightedScore += normalized[key] * weights[key];
         }
 
+        console.log('📊 盈利评分计算过程:', {
+            indicators,
+            normalized,
+            weights,
+            weightedScore
+        });
+
         // 惩罚机制
         let penalty = 0;
 
@@ -620,9 +627,17 @@ class RestaurantDiagnosisAdvanced {
         }
 
         // 最终评分
-        const finalScore = Math.max(0, Math.min(100, weightedScore - penalty));
+        let finalScore = Math.max(0, Math.min(100, weightedScore - penalty));
 
-        // 等级标签
+        // 🔧 修复 NaN 问题：如果计算结果为 NaN，使用 0 作为默认值
+        if (isNaN(finalScore) || !isFinite(finalScore)) {
+            console.error('⚠️ finalScore 计算异常，使用默认值 0', { weightedScore, penalty, finalScore });
+            finalScore = 0;
+        }
+
+        console.log('✅ 最终评分:', finalScore);
+
+        // 等级标签 - 根据 finalScore 区间分类
         let level, levelClass, levelColor, levelBg, description;
         if (finalScore >= 80) {
             level = '优秀';
