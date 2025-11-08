@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>富文本编辑器完整演示</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            color: rgba(255,255,255,0.9);
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+
+        .editor-container {
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .editor-header {
+            color: #fff;
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #444;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+
+        .toolbar button,
+        .toolbar select {
+            background: #3a3a3a;
+            color: #ddd;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #4a4a4a;
+            transform: translateY(-1px);
+        }
+
+        .toolbar button:active {
+            transform: translateY(0);
+        }
+
+        .toolbar input[type="color"] {
+            width: 40px;
+            height: 38px;
+            border: 1px solid #555;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #3a3a3a;
+        }
+
+        .toolbar .btn-save {
+            background: #10B981;
+            border-color: #10B981;
+        }
+
+        .toolbar .btn-save:hover {
+            background: #059669;
+        }
+
+        .toolbar .btn-clear {
+            background: #EF4444;
+            border-color: #EF4444;
+        }
+
+        .toolbar .btn-clear:hover {
+            background: #DC2626;
+        }
+
+        .toolbar .btn-template {
+            background: #8B5CF6;
+            border-color: #8B5CF6;
+        }
+
+        .toolbar .btn-template:hover {
+            background: #7C3AED;
+        }
+
+        .editor-area {
+            background: #fff;
+            color: #1F2937;
+            border-radius: 8px;
+            min-height: 300px;
+            padding: 20px;
+            font-size: 14px;
+            line-height: 1.8;
+            outline: none;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .editor-area:focus {
+            background: #fafafa;
+            box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.3);
+        }
+
+        .editor-area ul,
+        .editor-area ol {
+            padding-left: 32px;
+            margin: 12px 0;
+        }
+
+        .editor-area li {
+            margin-bottom: 8px;
+        }
+
+        .info-box {
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .info-box h3 {
+            margin-top: 0;
+            color: #1F2937;
+        }
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .feature-item {
+            background: #f3f4f6;
+            padding: 10px 15px;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+        }
+
+        .divider {
+            width: 1px;
+            height: 24px;
+            background: #555;
+            margin: 0 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 富文本编辑器完整演示</h1>
+        <p class="subtitle">基于 document.execCommand() 的原生实现 | 支持格式化、颜色、列表等功能</p>
+
+        <!-- 功能说明 -->
+        <div class="info-box">
+            <h3>📋 功能说明</h3>
+            <div class="feature-list">
+                <div class="feature-item">✅ 粗体 / 斜体 / 下划线</div>
+                <div class="feature-item">✅ 字体大小调整（7档）</div>
+                <div class="feature-item">✅ 字体颜色选择</div>
+                <div class="feature-item">✅ 背景高亮标记</div>
+                <div class="feature-item">✅ 无序列表 / 有序列表</div>
+                <div class="feature-item">✅ 内容保存（localStorage）</div>
+                <div class="feature-item">✅ 内容清空（确认保护）</div>
+                <div class="feature-item">✅ 模板快速插入</div>
+            </div>
+        </div>
+
+        <!-- 编辑器 1：客户体验分析 -->
+        <div class="editor-container">
+            <div class="editor-header">📊 编辑器 1：客户体验分析</div>
+
+            <div class="toolbar">
+                <button id="boldBtn_editor1"><b>B</b> 粗体</button>
+                <button id="italicBtn_editor1"><i>/</i> 斜体</button>
+                <button id="underlineBtn_editor1"><u>U</u> 下划线</button>
+
+                <div class="divider"></div>
+
+                <select id="fontSize_editor1">
+                    <option value="">字号</option>
+                    <option value="1">10px 极小</option>
+                    <option value="2">12px 小</option>
+                    <option value="3">14px 正常</option>
+                    <option value="4">16px 中等</option>
+                    <option value="5">18px 大</option>
+                    <option value="6">24px 特大</option>
+                    <option value="7">32px 超大</option>
+                </select>
+
+                <input type="color" id="fontColor_editor1" value="#1F2937" title="🎨 字体颜色">
+                <input type="color" id="bgColor_editor1" value="#FFFF00" title="🖍️ 背景高亮">
+
+                <div class="divider"></div>
+
+                <button id="ulBtn_editor1">• 列表</button>
+                <button id="olBtn_editor1">1. 编号</button>
+
+                <div style="flex-grow: 1;"></div>
+
+                <button id="saveBtn_editor1" class="btn-save">💾 保存</button>
+                <button id="clearBtn_editor1" class="btn-clear">🗑️ 清空</button>
+            </div>
+
+            <div id="editor1" class="editor-area" contenteditable="true">
+                <p><strong>客户体验评分与分析</strong></p>
+                <p>请在此输入内容，尝试使用上方工具栏的各种格式化功能：</p>
+                <ul>
+                    <li>选中文字后点击粗体/斜体/下划线</li>
+                    <li>使用颜色选择器改变字体颜色和背景</li>
+                    <li>点击列表按钮创建项目符号列表</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 编辑器 2：营销策略规划 -->
+        <div class="editor-container">
+            <div class="editor-header">🎯 编辑器 2：营销策略规划</div>
+
+            <div class="toolbar">
+                <button id="boldBtn_editor2"><b>B</b> 粗体</button>
+                <button id="italicBtn_editor2"><i>/</i> 斜体</button>
+                <button id="underlineBtn_editor2"><u>U</u> 下划线</button>
+
+                <div class="divider"></div>
+
+                <select id="fontSize_editor2">
+                    <option value="">字体大小</option>
+                    <option value="1">10px 极小</option>
+                    <option value="2">12px 小</option>
+                    <option value="3">14px 正常</option>
+                    <option value="4">16px 中等</option>
+                    <option value="5">18px 大</option>
+                    <option value="6">24px 特大</option>
+                    <option value="7">32px 超大</option>
+                </select>
+
+                <input type="color" id="fontColor_editor2" value="#1F2937" title="🎨 字体颜色">
+                <input type="color" id="bgColor_editor2" value="#FFFF00" title="🖍️ 背景高亮">
+
+                <div class="divider"></div>
+
+                <button id="ulBtn_editor2">• 列表</button>
+                <button id="olBtn_editor2">1. 编号</button>
+
+                <button id="templateBtn_editor2" class="btn-template">📋 插入模板</button>
+
+                <div style="flex-grow: 1;"></div>
+
+                <button id="saveBtn_editor2" class="btn-save">💾 保存</button>
+                <button id="clearBtn_editor2" class="btn-clear">🗑️ 清空</button>
+            </div>
+
+            <div id="editor2" class="editor-area" contenteditable="true">
+                <p><strong>营销策略内容编辑器</strong></p>
+                <p>这个编辑器额外提供了"插入模板"功能，点击可以快速生成营销计划模板。</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            console.log('=== 富文本编辑器演示开始 ===');
+
+            // ========================================
+            // 编辑器 1：客户体验分析
+            // ========================================
+            const editor1 = document.getElementById("editor1");
+
+            function exec1(command, value = null) {
+                document.execCommand(command, false, value);
+                editor1.focus();
+            }
+
+            // 格式化按钮
+            document.getElementById("boldBtn_editor1").onclick = () => exec1("bold");
+            document.getElementById("italicBtn_editor1").onclick = () => exec1("italic");
+            document.getElementById("underlineBtn_editor1").onclick = () => exec1("underline");
+            document.getElementById("ulBtn_editor1").onclick = () => exec1("insertUnorderedList");
+            document.getElementById("olBtn_editor1").onclick = () => exec1("insertOrderedList");
+
+            // 字体大小
+            document.getElementById("fontSize_editor1").addEventListener("change", function() {
+                if (this.value) {
+                    exec1("fontSize", this.value);
+                    this.selectedIndex = 0;
+                }
+            });
+
+            // 颜色
+            document.getElementById("fontColor_editor1").addEventListener("change", function() {
+                exec1("foreColor", this.value);
+            });
+
+            document.getElementById("bgColor_editor1").addEventListener("change", function() {
+                exec1("hiliteColor", this.value) || exec1("backColor", this.value);
+            });
+
+            // 保存
+            document.getElementById("saveBtn_editor1").onclick = () => {
+                const content = editor1.innerHTML;
+                localStorage.setItem("editor1Content", content);
+                alert("✅ 客户体验分析内容已保存！");
+            };
+
+            // 清空
+            document.getElementById("clearBtn_editor1").onclick = () => {
+                if (confirm("确定要清空编辑器内容吗？")) {
+                    editor1.innerHTML = "<p>在此输入客户体验分析内容...</p>";
+                }
+            };
+
+            // 加载保存的内容
+            const saved1 = localStorage.getItem("editor1Content");
+            if (saved1) editor1.innerHTML = saved1;
+
+            // ========================================
+            // 编辑器 2：营销策略规划
+            // ========================================
+            const editor2 = document.getElementById("editor2");
+
+            function exec2(command, value = null) {
+                document.execCommand(command, false, value);
+                editor2.focus();
+            }
+
+            // 格式化按钮
+            document.getElementById("boldBtn_editor2").onclick = () => exec2("bold");
+            document.getElementById("italicBtn_editor2").onclick = () => exec2("italic");
+            document.getElementById("underlineBtn_editor2").onclick = () => exec2("underline");
+            document.getElementById("ulBtn_editor2").onclick = () => exec2("insertUnorderedList");
+            document.getElementById("olBtn_editor2").onclick = () => exec2("insertOrderedList");
+
+            // 字体大小
+            document.getElementById("fontSize_editor2").addEventListener("change", function() {
+                if (this.value) {
+                    exec2("fontSize", this.value);
+                    this.selectedIndex = 0;
+                }
+            });
+
+            // 颜色
+            document.getElementById("fontColor_editor2").addEventListener("change", function() {
+                exec2("foreColor", this.value);
+            });
+
+            document.getElementById("bgColor_editor2").addEventListener("change", function() {
+                exec2("hiliteColor", this.value) || exec2("backColor", this.value);
+            });
+
+            // 插入模板
+            document.getElementById("templateBtn_editor2").onclick = () => {
+                const template = `
+                    <h3 style="color: #1F2937; font-weight: 700; margin-top: 20px;">📅 本月营销目标</h3>
+                    <ul>
+                        <li>短视频发布：100条</li>
+                        <li>直播场次：30场</li>
+                        <li>目标曝光：500万次</li>
+                        <li>转化目标：5000人</li>
+                    </ul>
+
+                    <h3 style="color: #1F2937; font-weight: 700; margin-top: 20px;">🎯 重点策略</h3>
+                    <ol>
+                        <li>与3-5个头部KOL建立合作</li>
+                        <li>每周发布2-3条爆款内容</li>
+                        <li>建立粉丝社群，提升互动率</li>
+                    </ol>
+
+                    <h3 style="color: #1F2937; font-weight: 700; margin-top: 20px;">💰 预算分配</h3>
+                    <ul>
+                        <li>KOL合作：40%</li>
+                        <li>信息流广告：30%</li>
+                        <li>内容制作：20%</li>
+                        <li>活动运营：10%</li>
+                    </ul>
+
+                    <h3 style="color: #1F2937; font-weight: 700; margin-top: 20px;">📊 评估指标</h3>
+                    <p style="color: #1F2937;">营销指数目标：80分以上，ROI目标：3倍以上，转化率目标：3%以上</p>
+                `;
+                editor2.innerHTML = template;
+            };
+
+            // 保存
+            document.getElementById("saveBtn_editor2").onclick = () => {
+                const content = editor2.innerHTML;
+                localStorage.setItem("editor2Content", content);
+                alert("✅ 营销策略内容已保存！");
+            };
+
+            // 清空
+            document.getElementById("clearBtn_editor2").onclick = () => {
+                if (confirm("确定要清空编辑器内容吗？")) {
+                    editor2.innerHTML = "<p>在此输入营销策略内容...</p>";
+                }
+            };
+
+            // 加载保存的内容
+            const saved2 = localStorage.getItem("editor2Content");
+            if (saved2) editor2.innerHTML = saved2;
+
+            console.log('✓ 两个富文本编辑器初始化完成');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>富文本编辑器测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+
+        /* 编辑器样式 */
+        .editor-container {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+        .toolbar {
+            background: rgba(0,0,0,0.03);
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .toolbar button, .toolbar select {
+            padding: 8px 12px;
+            background: #3F3F46;
+            color: #FAFAFA;
+            border: 1px solid #52525B;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .toolbar button:hover {
+            background: #52525B;
+        }
+        .editor {
+            background: #FFFFFF;
+            color: #1F2937 !important;
+            padding: 20px;
+            min-height: 200px;
+            font-size: 14px;
+            line-height: 1.8;
+            outline: none;
+        }
+        .editor:focus {
+            background: #FAFAFA !important;
+            box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 富文本编辑器功能测试</h1>
+
+    <div class="test-section">
+        <h2>测试说明</h2>
+        <p>这个页面用于测试富文本编辑器的所有按钮功能。请依次测试以下功能：</p>
+        <ol>
+            <li>✅ 粗体、斜体、下划线按钮</li>
+            <li>✅ 字体大小选择器</li>
+            <li>✅ 字体颜色选择器</li>
+            <li>✅ 背景高亮选择器</li>
+            <li>✅ 无序列表、有序列表按钮</li>
+            <li>✅ 保存和清空按钮</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>1. 客户体验编辑器测试</h2>
+
+        <div class="editor-container">
+            <div class="toolbar">
+                <button onclick="document.execCommand('bold', false, null); document.getElementById('experienceAnalysisEditor').focus();">
+                    <strong>B</strong> 粗体
+                </button>
+                <button onclick="document.execCommand('italic', false, null); document.getElementById('experienceAnalysisEditor').focus();">
+                    <em>I</em> 斜体
+                </button>
+                <button onclick="document.execCommand('underline', false, null); document.getElementById('experienceAnalysisEditor').focus();">
+                    U 下划线
+                </button>
+
+                <select id="fontSize_experienceAnalysisEditor">
+                    <option value="">字号</option>
+                    <option value="1">10px 极小</option>
+                    <option value="2">12px 小</option>
+                    <option value="3">14px 正常</option>
+                    <option value="4">16px 中等</option>
+                    <option value="5">18px 大</option>
+                    <option value="6">24px 特大</option>
+                    <option value="7">32px 超大</option>
+                </select>
+
+                <input type="color" id="fontColor_experienceAnalysisEditor" value="#1F2937" title="字体颜色">
+                <input type="color" id="bgColor_experienceAnalysisEditor" value="#FFFF00" title="背景高亮">
+
+                <button id="ulBtn_experienceAnalysisEditor">• 列表</button>
+                <button id="olBtn_experienceAnalysisEditor">1. 编号</button>
+
+                <button onclick="
+                    const content = document.getElementById('experienceAnalysisEditor').innerHTML;
+                    localStorage.setItem('experienceAnalysisContent', content);
+                    alert('✓ 已保存客户体验分析内容');
+                " style="background: #10B981;">
+                    💾 保存
+                </button>
+                <button onclick="
+                    if (confirm('确定要清空内容吗？')) {
+                        document.getElementById('experienceAnalysisEditor').innerHTML = '<p>在此输入测试内容...</p>';
+                    }
+                " style="background: #EF4444;">
+                    🗑️ 清空
+                </button>
+            </div>
+
+            <div id="experienceAnalysisEditor" class="editor" contenteditable="true" spellcheck="false">
+                <p>在此输入测试内容，尝试使用上方的按钮进行格式化...</p>
+            </div>
+        </div>
+
+        <div class="status info" style="margin-top: 15px;">
+            <strong>测试步骤：</strong>
+            <ol>
+                <li>在编辑器中输入一些文字</li>
+                <li>选中文字后，点击粗体/斜体/下划线按钮</li>
+                <li>选中文字后，选择不同的字号</li>
+                <li>选中文字后，选择字体颜色和背景颜色</li>
+                <li>点击列表按钮创建列表</li>
+                <li>点击保存按钮保存内容</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. 营销策略编辑器测试</h2>
+
+        <div class="editor-container">
+            <div class="toolbar">
+                <button id="boldBtn_marketingStrategyEditor"><strong>B</strong> 粗体</button>
+                <button id="italicBtn_marketingStrategyEditor"><em>I</em> 斜体</button>
+                <button id="underlineBtn_marketingStrategyEditor">U 下划线</button>
+
+                <select id="fontSize_marketingStrategyEditor">
+                    <option value="">字体大小</option>
+                    <option value="1">10px 极小</option>
+                    <option value="2">12px 小</option>
+                    <option value="3">14px 正常</option>
+                    <option value="4">16px 中等</option>
+                    <option value="5">18px 大</option>
+                    <option value="6">24px 特大</option>
+                    <option value="7">32px 超大</option>
+                </select>
+
+                <input type="color" id="fontColor_marketingStrategyEditor" value="#1F2937" title="字体颜色">
+                <input type="color" id="bgColor_marketingStrategyEditor" value="#FFFF00" title="背景高亮">
+
+                <button id="ulBtn_marketingStrategyEditor">• 列表</button>
+                <button id="olBtn_marketingStrategyEditor">1. 编号</button>
+
+                <button id="templateBtn_marketingStrategyEditor" style="background: #10B981;">📋 插入模板</button>
+
+                <button onclick="
+                    const content = document.getElementById('marketingStrategyEditor').innerHTML;
+                    localStorage.setItem('marketingStrategyContent', content);
+                    alert('✓ 已保存营销策略内容');
+                " style="background: #10B981;">
+                    💾 保存
+                </button>
+            </div>
+
+            <div id="marketingStrategyEditor" class="editor" contenteditable="true" spellcheck="false">
+                <p>在此输入营销策略内容，测试所有按钮功能...</p>
+            </div>
+        </div>
+
+        <div class="status info" style="margin-top: 15px;">
+            <strong>测试步骤：</strong>与上方相同，额外测试"插入模板"按钮是否能插入预设模板内容。
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 测试结果</h2>
+        <div id="testResults"></div>
+    </div>
+
+    <!-- 加载 app.js 中的编辑器初始化函数 -->
+    <script src="js/app.js"></script>
+
+    <script>
+        // 页面加载后初始化编辑器
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('=== 富文本编辑器测试开始 ===');
+
+            // 延迟执行确保 DOM 完全加载
+            setTimeout(function() {
+                // 调用 app.js 中定义的初始化函数
+                if (typeof initExperienceEditor === 'function') {
+                    initExperienceEditor();
+                    console.log('✓ 客户体验编辑器已初始化');
+                } else {
+                    console.error('✗ initExperienceEditor 函数未找到');
+                }
+
+                if (typeof initMarketingStrategyEditor === 'function') {
+                    initMarketingStrategyEditor();
+                    console.log('✓ 营销策略编辑器已初始化');
+                } else {
+                    console.error('✗ initMarketingStrategyEditor 函数未找到');
+                }
+
+                // 显示测试结果
+                const resultsDiv = document.getElementById('testResults');
+                resultsDiv.innerHTML = `
+                    <div class="status success">
+                        ✓ 编辑器初始化完成！请按照上述步骤进行手动测试。
+                    </div>
+                    <div class="status info">
+                        <strong>💡 提示：</strong>打开浏览器控制台（F12）可以查看详细日志。
+                    </div>
+                `;
+
+                console.log('=== 初始化完成，请开始测试 ===');
+            }, 300);
+        });
+    </script>
+</body>
+</html>

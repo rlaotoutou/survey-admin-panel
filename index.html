@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>餐饮调查数据管理与诊断系统</title>
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="./manifest.json">
+    <!-- PWA Manifest (需要通过HTTP服务器访问才能使用) -->
+    <!-- <link rel="manifest" href="./manifest.json"> -->
     
     <!-- Theme Color -->
     <meta name="theme-color" content="#3b82f6">
@@ -83,12 +83,12 @@
         .modal-content {
             background: white;
             border-radius: 12px;
-            max-width: 1000px;
-            width: 100%;
-            max-height: 90vh;
+            max-width: 1400px;
+            width: 95%;
+            max-height: 95vh;
             overflow-y: auto;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-            margin-top: 20px;
+            margin-top: 10px;
         }
         .tab-button {
             padding: 12px 24px;
@@ -154,11 +154,22 @@
             margin: 12px 0;
         }
         .diagnosis-section {
-            margin: 24px 0;
-            padding: 20px;
+            margin: 32px 0;
+            padding: 32px;
             background: white;
             border-radius: 12px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            font-size: 15px;
+            line-height: 1.7;
+        }
+        .diagnosis-section h3 {
+            font-size: 26px;
+            margin-bottom: 24px;
+        }
+        .diagnosis-section h4 {
+            font-size: 20px;
+            margin-top: 20px;
+            margin-bottom: 16px;
         }
         .score-badge {
             display: inline-block;
@@ -171,6 +182,41 @@
         .score-good { background: #dbeafe; color: #1e40af; }
         .score-average { background: #fef3c7; color: #92400e; }
         .score-poor { background: #fee2e2; color: #991b1b; }
+
+        /* 导出模式 - 临时移除canvas不支持的CSS特效 */
+        .export-mode * {
+            /* 移除backdrop-filter（canvas不支持毛玻璃效果） */
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+
+            /* 简化box-shadow避免渲染问题（保留基本阴影） */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+
+            /* 移除复杂的filter特效 */
+            filter: none !important;
+            -webkit-filter: none !important;
+
+            /* 移除混合模式 */
+            mix-blend-mode: normal !important;
+
+            /* 确保动画暂停，避免导出时捕获到动画中间帧 */
+            animation-play-state: paused !important;
+            -webkit-animation-play-state: paused !important;
+
+            /* 移除transform导致的层级问题 */
+            transform: none !important;
+            -webkit-transform: none !important;
+        }
+
+        /* 导出模式下确保文字可读性 */
+        .export-mode {
+            background-color: #18181B !important;
+        }
+
+        /* 导出模式下确保呼吸动画暂停 */
+        .export-mode [style*="animation"] {
+            animation: none !important;
+        }
     </style>
     
     <!-- Load non-critical CSS asynchronously -->
@@ -202,13 +248,16 @@
                         </button>
                     </div>
                 </div>
-                <div class="flex items-end">
-                    <button id="loadData" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div class="flex items-end gap-2">
+                    <button id="loadData" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <span class="loading" id="loadingSpinner">
                             <span class="spinner"></span>
                             加载中...
                         </span>
                         <span class="loading-text">加载数据</span>
+                    </button>
+                    <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500" title="退出登录">
+                        <i class="fas fa-sign-out-alt"></i>
                     </button>
                 </div>
             </div>
@@ -286,14 +335,14 @@
     <!-- Detail Modal -->
     <div id="detailModal" class="modal">
         <div class="modal-content">
-            <div class="flex justify-between items-center p-6 border-b border-gray-200">
-                <h3 id="modalTitle" class="text-lg font-semibold text-gray-900">数据详情</h3>
+            <div class="flex justify-between items-center p-8 border-b border-gray-200">
+                <h3 id="modalTitle" class="text-2xl font-bold text-gray-900">数据详情</h3>
                 <button id="closeModal" class="text-gray-400 hover:text-gray-600">
-                    <i class="fas fa-times text-xl"></i>
+                    <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
-            
-            <div class="p-6">
+
+            <div class="p-8">
                 <!-- Tab Navigation -->
                 <div class="flex border-b border-gray-200 mb-6">
                     <button class="tab-button active" data-tab="details">

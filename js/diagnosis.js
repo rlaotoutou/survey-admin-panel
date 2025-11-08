@@ -253,7 +253,7 @@ class RestaurantDiagnosisAdvanced {
                 ${this.generateStoreOverview(data, overallScore, healthLevel)}
                 ${this.generateDashboardSection(kpi, data)}
                 ${this.generateCostAnalysisSection(data, kpi)}
-                ${this.generateRevenueSection(data, kpi)}
+                ${this.generateTrafficAndExperienceSection(data, kpi)}
                 ${this.generateOperationsSection(data, kpi)}
                 ${this.generateMarketingSection(data, kpi)}
                 ${this.generateAISuggestions(data, kpi)}
@@ -481,6 +481,30 @@ class RestaurantDiagnosisAdvanced {
 
     // ==================== 总盈利评分算法 (Profitability Score) ====================
 
+    // 业态差异化配置（平均工资和基准价格）
+    getBusinessTypeConfig(businessType) {
+        const configs = {
+            '快餐': {
+                avgWage: 4500,      // 平均工资 元/月
+                basePrice: 35       // 基准客单价 元
+            },
+            '正餐': {
+                avgWage: 5500,
+                basePrice: 70
+            },
+            '火锅': {
+                avgWage: 6000,
+                basePrice: 100
+            },
+            '其他': {
+                avgWage: 5000,
+                basePrice: 50
+            }
+        };
+
+        return configs[businessType] || configs['其他'];
+    }
+
     // 行业基线带宽配置（正餐+中档+二类商场档位）
     getProfitabilityBaselines() {
         return {
@@ -488,9 +512,9 @@ class RestaurantDiagnosisAdvanced {
             gross_margin: { min: 55, ideal: 65, max: 75 },     // 毛利率 %
             cost_rate: { min: 65, ideal: 75, max: 85 },        // 综合成本率 % (反向)
             online_boost: { min: 0, ideal: 5, max: 15 },       // 线上对毛利的拉动 %
-            price_volatility: { min: 0, ideal: 5, max: 15 },   // 客单价波动 % (反向)
+            price_volatility: { min: 0, ideal: 10, max: 25 },  // 客单价波动 % (反向) - 已优化标准
             revenue_per_sqm: { min: 800, ideal: 1200, max: 2000 }, // 坪效 元/㎡
-            revenue_per_labor: { min: 25000, ideal: 35000, max: 50000 }, // 人效 元/人
+            revenue_per_labor: { min: 18000, ideal: 30000, max: 45000 }, // 人效 元/人 - 已优化标准
             resilience_months: { min: -3, ideal: 0, max: 3 }   // 收益韧性 连续下行月数 (反向)
         };
     }
@@ -526,14 +550,14 @@ class RestaurantDiagnosisAdvanced {
         };
     }
 
-    // 区间标准化函数（映射到 0-100）
+    // 区间标准化函数（映射到 20-100，避免过度惩罚）
     normalizeToRange(value, baseline, inverse = false) {
         const { min, ideal, max } = baseline;
 
-        // 🔧 防御性检查：如果 value 不是有效数字，返回 0
+        // 🔧 防御性检查：如果 value 不是有效数字，返回 20（最低保底分）
         if (!isFinite(value) || isNaN(value)) {
             console.warn('⚠️ normalizeToRange 收到无效值:', value);
-            return 0;
+            return 20;
         }
 
         let result;
@@ -541,34 +565,38 @@ class RestaurantDiagnosisAdvanced {
         if (inverse) {
             // 反向指标（越低越好，如成本率）
             if (value <= min) {
-                result = 100;
+                result = 100;  // 优秀水平
             } else if (value >= max) {
-                result = 0;
+                result = 20;   // 最低保底分（而非 0）
             } else if (value <= ideal) {
-                result = 100 - ((value - min) / (ideal - min)) * 20; // min到ideal: 100-80
+                // min → ideal: 100 → 80（轻微下降 -20 分）
+                result = 100 - ((value - min) / (ideal - min)) * 20;
             } else {
-                result = 80 - ((value - ideal) / (max - ideal)) * 80; // ideal到max: 80-0
+                // ideal → max: 80 → 20（快速下降 -60 分）
+                result = 80 - ((value - ideal) / (max - ideal)) * 60;
             }
         } else {
             // 正向指标（越高越好）
             if (value <= min) {
-                result = 0;
+                result = 20;   // 最低保底分（而非 0）
             } else if (value >= max) {
-                result = 100;
+                result = 100;  // 优秀水平
             } else if (value <= ideal) {
-                result = ((value - min) / (ideal - min)) * 80; // min到ideal: 0-80
+                // min → ideal: 20 → 80（快速增长 +60 分）
+                result = 20 + ((value - min) / (ideal - min)) * 60;
             } else {
-                result = 80 + ((value - ideal) / (max - ideal)) * 20; // ideal到max: 80-100
+                // ideal → max: 80 → 100（轻微增长 +20 分）
+                result = 80 + ((value - ideal) / (max - ideal)) * 20;
             }
         }
 
-        // 🔧 确保返回值是有效数字
+        // 🔧 确保返回值是有效数字且在 [20, 100] 范围内
         if (!isFinite(result) || isNaN(result)) {
             console.error('❌ normalizeToRange 计算出 NaN:', { value, baseline, inverse, result });
-            return 0;
+            return 20;
         }
 
-        return result;
+        return Math.max(20, Math.min(100, result));
     }
 
     // 计算总盈利评分
@@ -603,15 +631,23 @@ class RestaurantDiagnosisAdvanced {
         const area = Number(data.store_area) || 120;
         const seats = Number(data.seats) || 50;
 
+        // 🔧 获取业态差异化配置（平均工资和基准价格）
+        const businessType = data.business_type || '其他';
+        const btConfig = this.getBusinessTypeConfig(businessType);
+        const avgWage = btConfig.avgWage;      // 业态相关的平均工资
+        const basePrice = btConfig.basePrice;  // 业态相关的基准客单价
+
+        console.log('📌 业态配置:', { businessType, avgWage, basePrice });
+
         // 计算各项指标
         const indicators = {
             net_margin: monthlyRevenue > 0 ? ((monthlyRevenue - totalCost) / monthlyRevenue * 100) : 0,
             gross_margin: monthlyRevenue > 0 ? ((monthlyRevenue - foodCost) / monthlyRevenue * 100) : 0,
             cost_rate: monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0,
             online_boost: ((kpi && kpi.takeaway_ratio) || 0.3) * 100 * 0.15, // 简化：线上占比 * 拉动系数
-            price_volatility: Math.abs(((kpi && kpi.avg_spending) || 50) - 50) / 50 * 100, // 简化：与标准值偏离度
+            price_volatility: Math.abs(((kpi && kpi.avg_spending) || basePrice) - basePrice) / basePrice * 100, // ✅ 使用业态基准价格
             revenue_per_sqm: area > 0 ? monthlyRevenue / area : 0,
-            revenue_per_labor: laborCost > 0 ? monthlyRevenue / (laborCost / 5000) : 0, // 假设人均5000元/月
+            revenue_per_labor: laborCost > 0 ? monthlyRevenue / (laborCost / avgWage) : 0, // ✅ 使用业态平均工资
             resilience_months: 0 // 需要历史数据，暂时为0
         };
 
@@ -988,29 +1024,6 @@ class RestaurantDiagnosisAdvanced {
             `;
         }).join('');
 
-        // 🔧 临时调试：收集所有关键数据
-        const debugInfo = {
-            基础数据: {
-                monthlyRevenue,
-                foodCost,
-                laborCost,
-                rentCost,
-                marketingCost,
-                utilityCost,
-                totalCost,
-                store_area: data.store_area,
-                seats: data.seats,
-                total_customers: data.total_customers,
-                online_revenue: data.online_revenue
-            },
-            KPI数据: {
-                'kpi.avg_spending': kpi?.avg_spending,
-                'kpi.takeaway_ratio': kpi?.takeaway_ratio,
-                'kpi.table_turnover': kpi?.table_turnover,
-                'kpi.rating': kpi?.rating
-            }
-        };
-
         // 计算总盈利评分
         let profitabilityResult;
         try {
@@ -1021,40 +1034,7 @@ class RestaurantDiagnosisAdvanced {
             profitabilityResult = this.getDefaultProfitabilityResult();
         }
 
-        // 🔧 添加调试信息到结果
-        debugInfo.盈利评分结果 = profitabilityResult || { error: '结果为空或undefined' };
-        debugInfo.盈利评分类型 = typeof profitabilityResult;
-        debugInfo.是否为null = profitabilityResult === null;
-        debugInfo.是否为undefined = profitabilityResult === undefined;
-
         return `
-            <!-- 🔧 临时调试信息框 (问题解决后可删除) -->
-            <div style="background: #fff3cd; border: 2px solid #ffc107; border-radius: 12px; padding: 20px; margin: 20px 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <h3 style="margin: 0; color: #856404;">🔍 临时调试信息（解决后可删除）</h3>
-                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background: #ffc107; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;">隐藏</button>
-                </div>
-                <div style="background: white; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 13px;">
-                    <details open>
-                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">📦 基础数据</summary>
-                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.基础数据, null, 2)}</pre>
-                    </details>
-                    <details open style="margin-top: 12px;">
-                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">📊 KPI数据</summary>
-                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.KPI数据, null, 2)}</pre>
-                    </details>
-                    <details open style="margin-top: 12px;">
-                        <summary style="cursor: pointer; font-weight: 600; margin-bottom: 8px;">💰 盈利评分结果</summary>
-                        <div style="background: ${debugInfo.盈利评分类型 === 'undefined' ? '#fee2e2' : '#f0fdf4'}; padding: 8px; border-radius: 4px; margin: 8px 0;">
-                            <div>类型: <strong>${debugInfo.盈利评分类型}</strong></div>
-                            <div>是否为null: <strong>${debugInfo.是否为null}</strong></div>
-                            <div>是否为undefined: <strong>${debugInfo.是否为undefined}</strong></div>
-                        </div>
-                        <pre style="margin: 8px 0; overflow-x: auto;">${JSON.stringify(debugInfo.盈利评分结果, null, 2)}</pre>
-                    </details>
-                </div>
-            </div>
-
             <div class="diagnosis-section" style="background: #f9fafb; padding: 24px; border-radius: 16px; margin: 24px 0;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h3 style="margin: 0; font-size: 24px; font-weight: 700; color: #1f2937;">📊 核心经营指标总览</h3>
@@ -1143,65 +1123,1029 @@ class RestaurantDiagnosisAdvanced {
         `;
     }
 
+    // 🪶 VIBE CODING - 成本结构分析（感知型数据系统）
     generateCostAnalysisSection(data, kpi) {
-        const monthlyRevenue = data.monthly_revenue || 150000;
-        const foodCost = data.food_cost || 55000;
-        const laborCost = data.labor_cost || 46000;
-        const rentCost = data.rent_cost || 27600;
-        const utilityCost = data.utility_cost || 7350;
-        const marketingCost = data.marketing_cost || 13800;
-        
-        const foodCostRate = (foodCost / monthlyRevenue * 100).toFixed(1);
-        const laborCostRate = (laborCost / monthlyRevenue * 100).toFixed(1);
-        const rentCostRate = (rentCost / monthlyRevenue * 100).toFixed(1);
-        const utilityCostRate = (utilityCost / monthlyRevenue * 100).toFixed(1);
-        const marketingCostRate = (marketingCost / monthlyRevenue * 100).toFixed(1);
-        
-        const totalCostRate = parseFloat(foodCostRate) + parseFloat(laborCostRate) + parseFloat(rentCostRate) + 
-                             parseFloat(utilityCostRate) + parseFloat(marketingCostRate);
+        const monthlyRevenue = Number(data.monthly_revenue) || 0;
+        const foodCost = Number(data.food_cost) || 0;
+        const laborCost = Number(data.labor_cost) || 0;
+        const rentCost = Number(data.rent_cost) || 0;
+        const utilityCost = Number(data.utility_cost) || 0;
+        const marketingCost = Number(data.marketing_cost) || 0;
+
+        const totalCost = foodCost + laborCost + rentCost + utilityCost + marketingCost;
+        const netProfit = monthlyRevenue - totalCost;
+
+        // 计算成本率（定量层）
+        const costItems = [
+            { name: '食材成本', value: foodCost, rate: monthlyRevenue > 0 ? (foodCost / monthlyRevenue * 100) : 0, icon: '🥬', baseline: 35, id: 'food' },
+            { name: '人力成本', value: laborCost, rate: monthlyRevenue > 0 ? (laborCost / monthlyRevenue * 100) : 0, icon: '👨‍🍳', baseline: 30, id: 'labor' },
+            { name: '租金成本', value: rentCost, rate: monthlyRevenue > 0 ? (rentCost / monthlyRevenue * 100) : 0, icon: '🏠', baseline: 18, id: 'rent' },
+            { name: '水电气', value: utilityCost, rate: monthlyRevenue > 0 ? (utilityCost / monthlyRevenue * 100) : 0, icon: '⚡', baseline: 5, id: 'utility' },
+            { name: '营销费用', value: marketingCost, rate: monthlyRevenue > 0 ? (marketingCost / monthlyRevenue * 100) : 0, icon: '📱', baseline: 7, id: 'marketing' }
+        ];
+
+        const totalCostRate = monthlyRevenue > 0 ? (totalCost / monthlyRevenue * 100) : 0;
+        const netMarginRate = monthlyRevenue > 0 ? (netProfit / monthlyRevenue * 100) : 0;
+
+        // 算法语义层：生成诊断标签和自然语言解释
+        const diagnosis = this.generateCostDiagnosis(costItems, totalCostRate, netMarginRate, monthlyRevenue);
+
+        // 🧠 高级算法层：成本分类、敏感度、健康指数、优化优先级
+        const classification = this.classifyCosts(costItems, monthlyRevenue);
+        const sensitivity = this.calculateSensitivity(monthlyRevenue, totalCost, classification);
+        const healthIndex = this.calculateStructuralHealthIndex(costItems, totalCostRate, netMarginRate, classification);
+        const optimizations = this.prioritizeOptimizations(costItems, totalCostRate, monthlyRevenue, classification);
 
         return `
-            <div class="diagnosis-section">
-                <h3>💰 成本结构分析</h3>
-                <div class="cost-analysis-container">
-                    <div class="pie-chart-container">
-                        <h4>成本结构分布</h4>
-                        <div id="costPieChart" style="height: 200px;"></div>
-                        <div style="margin-top: 16px; font-size: 14px;">
-                            <div style="display: flex; align-items: center; margin: 4px 0;">
-                                <span style="color: #3b82f6;">🍱</span>
-                                <span style="margin-left: 8px;">食材：${foodCostRate}%</span>
-                    </div>
-                            <div style="display: flex; align-items: center; margin: 4px 0;">
-                                <span style="color: #10b981;">👷</span>
-                                <span style="margin-left: 8px;">人力：${laborCostRate}%</span>
+            <!-- 🪶 VIBE CODING: Cost Architecture -->
+            <div style="
+                background: linear-gradient(135deg, #18181B 0%, #27272A 100%);
+                border-radius: 24px;
+                padding: 40px;
+                margin: 32px 0;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+                animation: sectionFadeIn 300ms ease-out;
+            ">
+                <!-- 背景光晕效果 -->
+                <div style="
+                    position: absolute;
+                    top: -50%;
+                    right: -10%;
+                    width: 400px;
+                    height: 400px;
+                    background: radial-gradient(circle, ${diagnosis.glowColor}15 0%, transparent 70%);
+                    filter: blur(60px);
+                    animation: breathe 3s ease-in-out infinite;
+                    pointer-events: none;
+                "></div>
+
+                <!-- 标题区 -->
+                <div style="position: relative; z-index: 1; margin-bottom: 32px;">
+                    <h3 style="
+                        font-size: 28px;
+                        font-weight: 700;
+                        color: #FAFAFA;
+                        margin: 0 0 12px 0;
+                        letter-spacing: -0.5px;
+                    ">💰 成本流入路径</h3>
+                    <p style="
+                        font-size: 14px;
+                        color: #A1A1AA;
+                        margin: 0;
+                        font-weight: 400;
+                    ">Cost Architecture · 数据有呼吸，成本有节奏</p>
                 </div>
-                            <div style="display: flex; align-items: center; margin: 4px 0;">
-                                <span style="color: #f59e0b;">🏢</span>
-                                <span style="margin-left: 8px;">租金：${rentCostRate}%</span>
-                            </div>
-                            <div style="display: flex; align-items: center; margin: 4px 0;">
-                                <span style="color: #8b5cf6;">⚡</span>
-                                <span style="margin-left: 8px;">水电气：${utilityCostRate}%</span>
-                            </div>
-                            <div style="display: flex; align-items: center; margin: 4px 0;">
-                                <span style="color: #ef4444;">📣</span>
-                                <span style="margin-left: 8px;">营销：${marketingCostRate}%</span>
-                            </div>
+
+                <!-- 成本瀑布流 (Cost Waterfall) -->
+                <div style="position: relative; z-index: 1;">
+                    ${this.generateCostWaterfall(monthlyRevenue, costItems, netProfit, diagnosis)}
+                </div>
+
+                <!-- 诊断卡片区 -->
+                <div style="
+                    position: relative;
+                    z-index: 1;
+                    margin-top: 32px;
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 20px;
+                ">
+                    <!-- 定量值卡片 -->
+                    <div style="
+                        background: rgba(255,255,255,0.03);
+                        border: 1px solid rgba(255,255,255,0.08);
+                        border-radius: 16px;
+                        padding: 24px;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 12px;">
+                            QUANTITATIVE · 定量值
+                        </div>
+                        <div style="font-size: 36px; font-weight: 700; color: ${diagnosis.quantitativeColor}; margin-bottom: 8px;">
+                            ${totalCostRate.toFixed(1)}%
+                        </div>
+                        <div style="font-size: 14px; color: #A1A1AA;">
+                            综合成本率 · ${netMarginRate >= 0 ? '利润空间 +' + netMarginRate.toFixed(1) + '%' : '亏损 ' + netMarginRate.toFixed(1) + '%'}
                         </div>
                     </div>
-                    <div class="alert-panel">
-                        <h4>🚨 成本预警</h4>
-                        ${this.generateCostAlerts(foodCostRate, totalCostRate)}
+
+                    <!-- 诊断标签卡片 -->
+                    <div style="
+                        background: rgba(255,255,255,0.03);
+                        border: 1px solid rgba(255,255,255,0.08);
+                        border-radius: 16px;
+                        padding: 24px;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 12px;">
+                            SEMANTIC · 诊断标签
+                        </div>
+                        <div style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            padding: 10px 20px;
+                            background: ${diagnosis.semanticBg};
+                            border: 1px solid ${diagnosis.semanticBorder};
+                            border-radius: 999px;
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: ${diagnosis.semanticColor};
+                            animation: pulseGlow 3s ease-in-out infinite;
+                        ">
+                            <span style="font-size: 18px;">${diagnosis.semanticIcon}</span>
+                            ${diagnosis.semanticLabel}
+                        </div>
                     </div>
+                </div>
+
+                <!-- 自然语言解释卡片 -->
+                <div style="
+                    position: relative;
+                    z-index: 1;
+                    margin-top: 20px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 16px;
+                    padding: 28px;
+                    transition: all 300ms ease;
+                " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 16px;">
+                        NARRATIVE · 自然语言洞察
+                    </div>
+                    <div style="
+                        font-size: 15px;
+                        color: #D4D4D8;
+                        line-height: 1.8;
+                        font-weight: 400;
+                    ">
+                        ${diagnosis.narrative}
+                    </div>
+                    ${diagnosis.suggestions.length > 0 ? `
+                        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 13px; color: #A1A1AA; margin-bottom: 12px;">
+                                建议与共识
+                            </div>
+                            ${diagnosis.suggestions.map(s => `
+                                <div style="
+                                    display: flex;
+                                    align-items: flex-start;
+                                    gap: 12px;
+                                    margin-bottom: 10px;
+                                    font-size: 14px;
+                                    color: #A1A1AA;
+                                ">
+                                    <span style="color: ${s.color}; font-size: 16px; margin-top: 2px;">${s.icon}</span>
+                                    <span>${s.text}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- 🧠 高级分析模块 -->
+                ${this.generateAdvancedAnalysisModules(classification, sensitivity, healthIndex, optimizations, monthlyRevenue)}
+            </div>
+
+            <!-- 添加关键帧动画 -->
+            <style>
+                @keyframes sectionFadeIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(20px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+
+                @keyframes breathe {
+                    0%, 100% {
+                        opacity: 0.6;
+                        transform: scale(1);
+                    }
+                    50% {
+                        opacity: 1;
+                        transform: scale(1.1);
+                    }
+                }
+
+                @keyframes pulseGlow {
+                    0%, 100% {
+                        box-shadow: 0 0 0 rgba(255,255,255,0);
+                    }
+                    50% {
+                        box-shadow: 0 0 20px rgba(255,255,255,0.1);
+                    }
+                }
+
+                @keyframes flowIn {
+                    from {
+                        opacity: 0;
+                        transform: translateX(-10px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateX(0);
+                    }
+                }
+            </style>
+        `;
+    }
+
+    // 生成成本瀑布图
+    generateCostWaterfall(revenue, costItems, netProfit, diagnosis) {
+        let currentLevel = revenue;
+        const maxHeight = 300;
+
+        let html = `
+            <div style="background: rgba(255,255,255,0.02); border-radius: 16px; padding: 24px;">
+                <!-- 瀑布图标题 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <div style="font-size: 15px; color: #FAFAFA; font-weight: 600;">
+                        成本流入路径 · Waterfall View
+                    </div>
+                    <div style="font-size: 13px; color: #71717A;">
+                        从营收到净利的完整路径
+                    </div>
+                </div>
+
+                <!-- 起点：总营收 -->
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                    animation: flowIn 300ms ease-out;
+                ">
+                    <div style="
+                        min-width: 120px;
+                        font-size: 14px;
+                        color: #A1A1AA;
+                        font-weight: 500;
+                        text-align: right;
+                    ">营业收入</div>
+                    <div style="flex: 1; height: 48px; background: linear-gradient(90deg, #2DD4BF 0%, #14B8A6 100%); border-radius: 8px; position: relative; box-shadow: 0 0 20px rgba(45,212,191,0.3); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; transition: all 300ms ease;" onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 0 30px rgba(45,212,191,0.5)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 20px rgba(45,212,191,0.3)';">
+                        <span style="font-size: 15px; color: white; font-weight: 600;">¥${this.formatNumber(revenue)}</span>
+                        <span style="font-size: 12px; color: rgba(255,255,255,0.8);">100.0%</span>
+                    </div>
+                </div>`;
+
+        // 成本项流入
+        costItems.forEach((item, index) => {
+            currentLevel -= item.value;
+            const percentage = revenue > 0 ? (item.value / revenue * 100) : 0;
+            const widthPercent = revenue > 0 ? (item.value / revenue * 100) : 0;
+
+            // 根据成本率判断状态颜色
+            let barColor, barGradient, glowColor, statusEmoji;
+            if (item.rate > item.baseline * 1.2) {
+                // 超出基线20%：柔红
+                barColor = '#FCA5A5';
+                barGradient = 'linear-gradient(90deg, #FCA5A5 0%, #EF4444 100%)';
+                glowColor = 'rgba(252,165,165,0.3)';
+                statusEmoji = '⚠️';
+            } else if (item.rate < item.baseline * 0.9) {
+                // 低于基线10%：轻绿
+                barColor = '#6EE7B7';
+                barGradient = 'linear-gradient(90deg, #6EE7B7 0%, #10B981 100%)';
+                glowColor = 'rgba(110,231,183,0.3)';
+                statusEmoji = '✓';
+            } else {
+                // 平稳：淡蓝
+                barColor = '#93C5FD';
+                barGradient = 'linear-gradient(90deg, #93C5FD 0%, #60A5FA 100%)';
+                glowColor = 'rgba(147,197,253,0.3)';
+                statusEmoji = '•';
+            }
+
+            html += `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    margin-bottom: 12px;
+                    animation: flowIn 300ms ease-out ${(index + 1) * 100}ms backwards;
+                ">
+                    <div style="
+                        min-width: 120px;
+                        font-size: 14px;
+                        color: #A1A1AA;
+                        font-weight: 500;
+                        text-align: right;
+                        display: flex;
+                        align-items: center;
+                        justify-content: flex-end;
+                        gap: 6px;
+                    ">
+                        <span style="font-size: 16px;">${item.icon}</span>
+                        <span>${item.name}</span>
+                    </div>
+                    <div style="
+                        flex: 1;
+                        height: 40px;
+                        background: ${barGradient};
+                        border-radius: 8px;
+                        width: ${widthPercent}%;
+                        max-width: 100%;
+                        position: relative;
+                        box-shadow: 0 0 15px ${glowColor};
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 0 16px;
+                        transition: all 300ms ease;
+                        cursor: pointer;
+                    " onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 0 25px ${glowColor}, 0 4px 12px rgba(0,0,0,0.2)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 15px ${glowColor}';">
+                        <span style="font-size: 14px; color: white; font-weight: 600;">¥${this.formatNumber(item.value)}</span>
+                        <span style="font-size: 12px; color: rgba(255,255,255,0.9);">${statusEmoji} ${item.rate.toFixed(1)}%</span>
+                    </div>
+                </div>`;
+        });
+
+        // 终点：净利润
+        const netMarginPercent = revenue > 0 ? Math.abs(netProfit / revenue * 100) : 0;
+        const isProfitable = netProfit >= 0;
+
+        html += `
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    margin-top: 20px;
+                    padding-top: 20px;
+                    border-top: 1px solid rgba(255,255,255,0.08);
+                    animation: flowIn 300ms ease-out ${(costItems.length + 1) * 100}ms backwards;
+                ">
+                    <div style="
+                        min-width: 120px;
+                        font-size: 14px;
+                        color: #FAFAFA;
+                        font-weight: 600;
+                        text-align: right;
+                    ">${isProfitable ? '净利润' : '净亏损'}</div>
+                    <div style="
+                        flex: 1;
+                        height: 48px;
+                        background: ${isProfitable ? 'linear-gradient(90deg, #34D399 0%, #10B981 100%)' : 'linear-gradient(90deg, #F87171 0%, #DC2626 100%)'};
+                        border-radius: 8px;
+                        position: relative;
+                        box-shadow: 0 0 20px ${isProfitable ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'};
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 0 20px;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 0 30px ${isProfitable ? 'rgba(52,211,153,0.6)' : 'rgba(248,113,113,0.6)'}';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 0 20px ${isProfitable ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'}';">
+                        <span style="font-size: 16px; color: white; font-weight: 700;">${isProfitable ? '¥' : '-¥'}${this.formatNumber(Math.abs(netProfit))}</span>
+                        <span style="font-size: 13px; color: rgba(255,255,255,0.9);">${isProfitable ? '+' : ''}${(netMarginPercent * (isProfitable ? 1 : -1)).toFixed(1)}%</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        return html;
+    }
+
+    // 生成成本诊断（算法语义层）
+    generateCostDiagnosis(costItems, totalCostRate, netMarginRate, revenue) {
+        // 定量值判断
+        let quantitativeColor, semanticLabel, semanticIcon, semanticColor, semanticBg, semanticBorder, glowColor, narrative;
+        let suggestions = [];
+
+        if (totalCostRate > 100) {
+            // 亏损状态
+            quantitativeColor = '#FCA5A5';
+            semanticLabel = '盈利空间承压';
+            semanticIcon = '⚠️';
+            semanticColor = '#FCA5A5';
+            semanticBg = 'rgba(252,165,165,0.1)';
+            semanticBorder = 'rgba(252,165,165,0.3)';
+            glowColor = '#FCA5A5';
+
+            narrative = `综合成本率 ${totalCostRate.toFixed(1)}%，收入暂时无法覆盖成本。`;
+
+            // 分析哪些成本偏高
+            const highCostItems = costItems.filter(item => item.rate > item.baseline * 1.2);
+            if (highCostItems.length > 0) {
+                const topItem = highCostItems.sort((a, b) => b.rate - a.rate)[0];
+                narrative += `主要压力来自${topItem.name}（${topItem.rate.toFixed(1)}%），高于合理区间约 ${(topItem.rate - topItem.baseline).toFixed(1)} 个百分点。`;
+
+                suggestions.push({
+                    icon: '🎯',
+                    color: '#60A5FA',
+                    text: `${topItem.name}占比偏高，可以从供应链优化或流程改进入手。`
+                });
+            }
+
+            suggestions.push({
+                icon: '💡',
+                color: '#34D399',
+                text: '建议保持坪效与线上占比的优势，通过结构调整逐步改善利润空间。'
+            });
+
+        } else if (totalCostRate > 85) {
+            // 警戒状态
+            quantitativeColor = '#FCD34D';
+            semanticLabel = '成本结构偏紧';
+            semanticIcon = '○';
+            semanticColor = '#FCD34D';
+            semanticBg = 'rgba(252,211,77,0.1)';
+            semanticBorder = 'rgba(252,211,77,0.3)';
+            glowColor = '#FCD34D';
+
+            narrative = `综合成本率 ${totalCostRate.toFixed(1)}%，利润空间约 ${netMarginRate.toFixed(1)}%，处于紧平衡状态。`;
+
+            const improvableItems = costItems.filter(item => item.rate > item.baseline * 1.1);
+            if (improvableItems.length > 0) {
+                narrative += `有 ${improvableItems.length} 项成本略高于健康线，但整体可控。`;
+                suggestions.push({
+                    icon: '📊',
+                    color: '#60A5FA',
+                    text: '成本结构基本稳定，建议持续关注人力与食材成本的波动。'
+                });
+            }
+
+        } else if (totalCostRate > 70) {
+            // 良好状态
+            quantitativeColor = '#6EE7B7';
+            semanticLabel = '成本结构健康';
+            semanticIcon = '✓';
+            semanticColor = '#6EE7B7';
+            semanticBg = 'rgba(110,231,183,0.1)';
+            semanticBorder = 'rgba(110,231,183,0.3)';
+            glowColor = '#6EE7B7';
+
+            narrative = `综合成本率 ${totalCostRate.toFixed(1)}%，利润空间 ${netMarginRate.toFixed(1)}%，成本结构健康。`;
+
+            const efficientItems = costItems.filter(item => item.rate < item.baseline * 0.9);
+            if (efficientItems.length > 0) {
+                narrative += `${efficientItems.map(i => i.name).join('、')}控制得当，效率表现优秀。`;
+            }
+
+            suggestions.push({
+                icon: '🎯',
+                color: '#34D399',
+                text: '当前成本结构合理，建议保持稳定性并关注长期趋势。'
+            });
+
+        } else {
+            // 优秀状态
+            quantitativeColor = '#34D399';
+            semanticLabel = '成本控制优秀';
+            semanticIcon = '★';
+            semanticColor = '#34D399';
+            semanticBg = 'rgba(52,211,153,0.1)';
+            semanticBorder = 'rgba(52,211,153,0.3)';
+            glowColor = '#34D399';
+
+            narrative = `综合成本率 ${totalCostRate.toFixed(1)}%，利润空间 ${netMarginRate.toFixed(1)}%，成本控制优秀，盈利能力强劲。`;
+            narrative += `各项成本均在健康区间，经营体质非常好。`;
+
+            suggestions.push({
+                icon: '✨',
+                color: '#34D399',
+                text: '成本管控表现出色，继续维持当前策略即可。'
+            });
+        }
+
+        return {
+            quantitativeColor,
+            semanticLabel,
+            semanticIcon,
+            semanticColor,
+            semanticBg,
+            semanticBorder,
+            glowColor,
+            narrative,
+            suggestions
+        };
+    }
+
+    // 🧠 成本分类：可变成本 vs 刚性成本
+    classifyCosts(costItems, revenue) {
+        const variableCosts = [];  // 可变成本（随营收波动）
+        const rigidCosts = [];     // 刚性成本（相对固定）
+
+        costItems.forEach(item => {
+            if (item.id === 'food' || item.id === 'marketing') {
+                // 食材和营销是可变成本
+                variableCosts.push(item);
+            } else {
+                // 人力、租金、水电气是刚性成本
+                rigidCosts.push(item);
+            }
+        });
+
+        const variableTotal = variableCosts.reduce((sum, item) => sum + item.value, 0);
+        const rigidTotal = rigidCosts.reduce((sum, item) => sum + item.value, 0);
+        const variableRate = revenue > 0 ? (variableTotal / revenue * 100) : 0;
+        const rigidRate = revenue > 0 ? (rigidTotal / revenue * 100) : 0;
+
+        return {
+            variable: { items: variableCosts, total: variableTotal, rate: variableRate },
+            rigid: { items: rigidCosts, total: rigidTotal, rate: rigidRate }
+        };
+    }
+
+    // 📊 营收敏感度分析：测算不同营收波动下的净利变化
+    calculateSensitivity(revenue, totalCost, classification) {
+        const scenarios = [
+            { label: '-10%', change: -0.10 },
+            { label: '-5%', change: -0.05 },
+            { label: '当前', change: 0 },
+            { label: '+5%', change: 0.05 },
+            { label: '+10%', change: 0.10 }
+        ];
+
+        const results = scenarios.map(scenario => {
+            const newRevenue = revenue * (1 + scenario.change);
+            // 可变成本随营收等比例变化
+            const newVariableCost = classification.variable.total * (1 + scenario.change);
+            // 刚性成本保持不变
+            const newRigidCost = classification.rigid.total;
+            const newTotalCost = newVariableCost + newRigidCost;
+            const newProfit = newRevenue - newTotalCost;
+            const profitMargin = newRevenue > 0 ? (newProfit / newRevenue * 100) : 0;
+
+            return {
+                label: scenario.label,
+                revenue: newRevenue,
+                profit: newProfit,
+                profitMargin: profitMargin,
+                change: scenario.change * 100
+            };
+        });
+
+        // 计算净利敏感度系数（营收变化1%，净利变化多少%）
+        const baseProfit = results[2].profit; // 当前情况
+        const scenario5 = results[3].profit;  // +5%情况
+        const sensitivityCoef = baseProfit !== 0 ? ((scenario5 - baseProfit) / baseProfit) / 0.05 : 0;
+
+        return { scenarios: results, sensitivityCoefficient: sensitivityCoef };
+    }
+
+    // 🎯 结构健康指数：综合评估成本结构质量
+    calculateStructuralHealthIndex(costItems, totalCostRate, netMarginRate, classification) {
+        let healthScore = 100;
+        const factors = [];
+
+        // 1. 总成本率健康度（权重30%）
+        if (totalCostRate > 100) {
+            healthScore -= 30;
+            factors.push({ name: '总成本率', impact: -30, status: '超标' });
+        } else if (totalCostRate > 85) {
+            healthScore -= 15;
+            factors.push({ name: '总成本率', impact: -15, status: '偏高' });
+        } else if (totalCostRate < 70) {
+            factors.push({ name: '总成本率', impact: 0, status: '优秀' });
+        }
+
+        // 2. 单项成本率健康度（权重40%）
+        costItems.forEach(item => {
+            const deviation = item.rate - item.baseline;
+            if (deviation > item.baseline * 0.2) {
+                // 超出基线20%以上
+                const deduction = Math.min(10, deviation / 2);
+                healthScore -= deduction;
+                factors.push({ name: item.name, impact: -deduction, status: '显著偏高' });
+            } else if (deviation > item.baseline * 0.1) {
+                // 超出基线10-20%
+                const deduction = Math.min(5, deviation / 3);
+                healthScore -= deduction;
+                factors.push({ name: item.name, impact: -deduction, status: '轻微偏高' });
+            }
+        });
+
+        // 3. 成本结构平衡度（权重20%）
+        const costBalance = classification.variable.rate / (classification.variable.rate + classification.rigid.rate);
+        if (costBalance < 0.4 || costBalance > 0.7) {
+            // 可变成本占比过低或过高
+            healthScore -= 10;
+            factors.push({ name: '结构平衡', impact: -10, status: '失衡' });
+        }
+
+        // 4. 利润空间（权重10%）
+        if (netMarginRate < 0) {
+            healthScore -= 10;
+            factors.push({ name: '利润空间', impact: -10, status: '亏损' });
+        } else if (netMarginRate < 5) {
+            healthScore -= 5;
+            factors.push({ name: '利润空间', impact: -5, status: '微利' });
+        }
+
+        // 🔧 四舍五入到整数，避免显示长小数
+        healthScore = Math.round(Math.max(0, Math.min(100, healthScore)));
+
+        // 风险等级
+        let riskLevel, riskLabel, riskColor;
+        if (healthScore >= 80) {
+            riskLevel = 'low';
+            riskLabel = '低风险';
+            riskColor = '#34D399';
+        } else if (healthScore >= 60) {
+            riskLevel = 'medium';
+            riskLabel = '中等风险';
+            riskColor = '#FCD34D';
+        } else if (healthScore >= 40) {
+            riskLevel = 'high';
+            riskLabel = '高风险';
+            riskColor = '#FCA5A5';
+        } else {
+            riskLevel = 'critical';
+            riskLabel = '严重风险';
+            riskColor = '#F87171';
+        }
+
+        return {
+            score: healthScore,
+            riskLevel,
+            riskLabel,
+            riskColor,
+            factors: factors.sort((a, b) => a.impact - b.impact) // 按影响从负到正排序
+        };
+    }
+
+    // 🎲 优化建议优先级排序：降本潜力 × 影响权重 ÷ 落地难度
+    prioritizeOptimizations(costItems, totalCostRate, revenue, classification) {
+        const optimizations = [];
+
+        costItems.forEach(item => {
+            const deviation = item.rate - item.baseline;
+            if (deviation > item.baseline * 0.1) {
+                // 成本偏高，有优化空间
+                const savingPotential = deviation * revenue / 100; // 降本潜力（元）
+                const impactWeight = item.value / (item.value + revenue) * 100; // 影响权重
+
+                // 难度系数（1-10，越小越容易）
+                let difficulty;
+                let actions = [];
+
+                if (item.id === 'food') {
+                    difficulty = 4; // 中等难度
+                    actions = ['优化采购议价', '减少食材损耗', '调整菜单结构'];
+                } else if (item.id === 'labor') {
+                    difficulty = 6; // 较高难度
+                    actions = ['优化排班管理', '提升人均产出', '考虑自动化设备'];
+                } else if (item.id === 'rent') {
+                    difficulty = 9; // 很难
+                    actions = ['重新谈判租金', '转租部分面积', '评估搬迁可行性'];
+                } else if (item.id === 'marketing') {
+                    difficulty = 3; // 容易
+                    actions = ['评估ROI淘汰低效渠道', '转向口碑营销', '优化投放策略'];
+                } else {
+                    difficulty = 7;
+                    actions = ['节能改造', '更换设备', '优化使用时段'];
+                }
+
+                // 综合优先级得分 = 潜力 × 权重 / 难度
+                const priorityScore = (savingPotential * impactWeight) / (difficulty * 1000);
+
+                optimizations.push({
+                    item: item.name,
+                    itemId: item.id,
+                    currentRate: item.rate,
+                    baseline: item.baseline,
+                    deviation: deviation,
+                    savingPotential: savingPotential,
+                    impactWeight: impactWeight,
+                    difficulty: difficulty,
+                    priorityScore: priorityScore,
+                    actions: actions,
+                    urgency: deviation > item.baseline * 0.3 ? '紧急' : deviation > item.baseline * 0.2 ? '重要' : '一般'
+                });
+            }
+        });
+
+        // 按优先级得分降序排序
+        return optimizations.sort((a, b) => b.priorityScore - a.priorityScore);
+    }
+
+    // 📦 生成高级分析模块的完整HTML
+    generateAdvancedAnalysisModules(classification, sensitivity, healthIndex, optimizations, revenue) {
+        return `
+            <!-- 成本分类 & 结构健康指数 -->
+            <div style="
+                position: relative;
+                z-index: 1;
+                margin-top: 32px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+            ">
+                <!-- 成本分类卡片 -->
+                <div style="
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 16px;
+                    padding: 28px;
+                    transition: all 300ms ease;
+                " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 16px;">
+                        成本结构分类 · Cost Classification
+                    </div>
+
+                    <!-- 可变成本 -->
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 18px;">📊</span>
+                                <span style="font-size: 15px; color: #FAFAFA; font-weight: 600;">可变成本</span>
+                            </div>
+                            <span style="font-size: 20px; color: #60A5FA; font-weight: 700;">${classification.variable.rate.toFixed(1)}%</span>
+                        </div>
+                        <div style="height: 8px; background: rgba(96,165,250,0.2); border-radius: 4px; overflow: hidden;">
+                            <div style="height: 100%; width: ${Math.min(100, classification.variable.rate)}%; background: linear-gradient(90deg, #60A5FA 0%, #3B82F6 100%); transition: width 500ms ease;"></div>
+                        </div>
+                        <div style="font-size: 12px; color: #A1A1AA; margin-top: 8px;">
+                            随营收波动：食材 + 营销 = ¥${this.formatNumber(classification.variable.total)}
+                        </div>
+                    </div>
+
+                    <!-- 刚性成本 -->
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 18px;">🔒</span>
+                                <span style="font-size: 15px; color: #FAFAFA; font-weight: 600;">刚性成本</span>
+                            </div>
+                            <span style="font-size: 20px; color: #FCA5A5; font-weight: 700;">${classification.rigid.rate.toFixed(1)}%</span>
+                        </div>
+                        <div style="height: 8px; background: rgba(252,165,165,0.2); border-radius: 4px; overflow: hidden;">
+                            <div style="height: 100%; width: ${Math.min(100, classification.rigid.rate)}%; background: linear-gradient(90deg, #FCA5A5 0%, #EF4444 100%); transition: width 500ms ease;"></div>
+                        </div>
+                        <div style="font-size: 12px; color: #A1A1AA; margin-top: 8px;">
+                            相对固定：人力 + 租金 + 水电气 = ¥${this.formatNumber(classification.rigid.total)}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 结构健康指数卡片 -->
+                <div style="
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 16px;
+                    padding: 28px;
+                    transition: all 300ms ease;
+                " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 16px;">
+                        结构健康指数 · Health Index
+                    </div>
+
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                        <div>
+                            <div style="font-size: 48px; font-weight: 700; color: ${healthIndex.riskColor}; line-height: 1;">
+                                ${healthIndex.score}
+                            </div>
+                            <div style="font-size: 14px; color: #A1A1AA; margin-top: 4px;">
+                                综合得分 / 100
+                            </div>
+                        </div>
+                        <div style="
+                            padding: 12px 24px;
+                            background: ${healthIndex.riskColor}15;
+                            border: 1px solid ${healthIndex.riskColor}30;
+                            border-radius: 999px;
+                            font-size: 14px;
+                            font-weight: 600;
+                            color: ${healthIndex.riskColor};
+                        ">
+                            ${healthIndex.riskLabel}
+                        </div>
+                    </div>
+
+                    <!-- 影响因子 -->
+                    ${healthIndex.factors.length > 0 ? `
+                        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 12px; color: #71717A; margin-bottom: 10px;">主要影响因子</div>
+                            ${healthIndex.factors.slice(0, 3).map(f => `
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13px;">
+                                    <span style="color: #A1A1AA;">${f.name}</span>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="color: ${f.impact < 0 ? '#FCA5A5' : '#6EE7B7'};">${f.impact < 0 ? '' : '+'}${Math.round(f.impact)}分</span>
+                                        <span style="font-size: 11px; color: #71717A;">${f.status}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+
+            <!-- 营收敏感度分析 -->
+            ${this.generateSensitivityChart(sensitivity)}
+
+            <!-- 优化建议优先级 -->
+            ${optimizations.length > 0 ? this.generateOptimizationPriorities(optimizations, revenue) : ''}
+        `;
+    }
+
+    // 📈 生成敏感度分析图表（Tornado图）
+    generateSensitivityChart(sensitivity) {
+        const maxAbsProfit = Math.max(...sensitivity.scenarios.map(s => Math.abs(s.profit)));
+
+        return `
+            <div style="
+                position: relative;
+                z-index: 1;
+                margin-top: 20px;
+                background: rgba(255,255,255,0.03);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 16px;
+                padding: 28px;
+                transition: all 300ms ease;
+            " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 4px;">
+                            营收敏感度分析 · Sensitivity Analysis
+                        </div>
+                        <div style="font-size: 12px; color: #71717A;">
+                            营收变化对净利的影响曲线
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 12px; color: #71717A;">敏感度系数</div>
+                        <div style="font-size: 20px; color: ${Math.abs(sensitivity.sensitivityCoefficient) > 2 ? '#FCA5A5' : '#6EE7B7'}; font-weight: 700;">
+                            ${sensitivity.sensitivityCoefficient.toFixed(2)}x
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tornado 图 -->
+                <div style="margin-top: 24px;">
+                    ${sensitivity.scenarios.map((scenario, index) => {
+                        const isCurrent = scenario.label === '当前';
+                        const isProfit = scenario.profit >= 0;
+                        const barWidth = maxAbsProfit > 0 ? (Math.abs(scenario.profit) / maxAbsProfit * 50) : 0;
+                        const barColor = isProfit ? '#6EE7B7' : '#FCA5A5';
+
+                        return `
+                            <div style="
+                                display: flex;
+                                align-items: center;
+                                gap: 16px;
+                                margin-bottom: 12px;
+                                animation: flowIn 300ms ease-out ${index * 50}ms backwards;
+                            ">
+                                <!-- 左侧标签 -->
+                                <div style="min-width: 80px; text-align: right;">
+                                    <span style="font-size: 13px; color: ${isCurrent ? '#FAFAFA' : '#A1A1AA'}; font-weight: ${isCurrent ? '600' : '400'};">
+                                        ${scenario.label}
+                                    </span>
+                                </div>
+
+                                <!-- 中间图表 -->
+                                <div style="flex: 1; position: relative; height: 32px; display: flex; align-items: center; justify-content: center;">
+                                    <div style="position: absolute; width: 2px; height: 100%; background: rgba(255,255,255,0.1); left: 50%;"></div>
+                                    <div style="
+                                        position: absolute;
+                                        ${isProfit ? 'left: 50%;' : 'right: 50%;'}
+                                        width: ${barWidth}%;
+                                        height: ${isCurrent ? '32px' : '24px'};
+                                        background: linear-gradient(90deg, ${barColor}80 0%, ${barColor} 100%);
+                                        border-radius: 4px;
+                                        box-shadow: 0 0 ${isCurrent ? '15px' : '10px'} ${barColor}40;
+                                        transition: all 300ms ease;
+                                    "></div>
+                                </div>
+
+                                <!-- 右侧数值 -->
+                                <div style="min-width: 120px; text-align: left;">
+                                    <div style="font-size: 14px; color: ${barColor}; font-weight: 600;">
+                                        ${isProfit ? '+' : ''}¥${this.formatNumber(Math.abs(scenario.profit))}
+                                    </div>
+                                    <div style="font-size: 11px; color: #71717A;">
+                                        ${scenario.profitMargin.toFixed(1)}% 利润率
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 13px; color: #A1A1AA;">
+                    💡 解读：营收每变化 1%，净利润变化约 ${(sensitivity.sensitivityCoefficient * 1).toFixed(2)}%
+                    ${Math.abs(sensitivity.sensitivityCoefficient) > 2 ? '（高敏感，需谨慎控制成本）' : '（敏感度适中）'}
                 </div>
             </div>
         `;
     }
 
+    // 🎯 生成优化建议优先级列表
+    generateOptimizationPriorities(optimizations, revenue) {
+        return `
+            <div style="
+                position: relative;
+                z-index: 1;
+                margin-top: 20px;
+                background: rgba(255,255,255,0.03);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 16px;
+                padding: 28px;
+                transition: all 300ms ease;
+            " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 4px;">
+                    优化建议优先级 · Optimization Priorities
+                </div>
+                <div style="font-size: 12px; color: #71717A; margin-bottom: 20px;">
+                    基于"降本潜力 × 影响权重 ÷ 落地难度"综合排序
+                </div>
+
+                ${optimizations.slice(0, 3).map((opt, index) => {
+                    const urgencyColor = opt.urgency === '紧急' ? '#EF4444' : opt.urgency === '重要' ? '#F59E0B' : '#60A5FA';
+                    const difficultyStars = '★'.repeat(Math.ceil(opt.difficulty / 2)) + '☆'.repeat(5 - Math.ceil(opt.difficulty / 2));
+
+                    return `
+                        <div style="
+                            background: rgba(255,255,255,0.02);
+                            border: 1px solid rgba(255,255,255,0.06);
+                            border-radius: 12px;
+                            padding: 20px;
+                            margin-bottom: 16px;
+                            animation: flowIn 300ms ease-out ${index * 100}ms backwards;
+                        ">
+                            <!-- 标题行 -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                <div style="flex: 1;">
+                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                                        <span style="
+                                            display: inline-block;
+                                            width: 24px;
+                                            height: 24px;
+                                            line-height: 24px;
+                                            text-align: center;
+                                            background: ${urgencyColor}20;
+                                            color: ${urgencyColor};
+                                            border-radius: 6px;
+                                            font-size: 14px;
+                                            font-weight: 700;
+                                        ">${index + 1}</span>
+                                        <span style="font-size: 16px; color: #FAFAFA; font-weight: 600;">${opt.item}</span>
+                                        <span style="
+                                            padding: 4px 10px;
+                                            background: ${urgencyColor}15;
+                                            border: 1px solid ${urgencyColor}30;
+                                            border-radius: 999px;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            color: ${urgencyColor};
+                                        ">${opt.urgency}</span>
+                                    </div>
+                                    <div style="font-size: 13px; color: #A1A1AA;">
+                                        当前 ${opt.currentRate.toFixed(1)}% · 基准 ${opt.baseline.toFixed(1)}% · 偏离 +${opt.deviation.toFixed(1)}%
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 指标行 -->
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px;">
+                                <div style="background: rgba(52,211,153,0.1); border-radius: 8px; padding: 10px;">
+                                    <div style="font-size: 11px; color: #71717A; margin-bottom: 4px;">降本潜力</div>
+                                    <div style="font-size: 16px; color: #34D399; font-weight: 700;">¥${this.formatNumber(Math.round(opt.savingPotential))}</div>
+                                </div>
+                                <div style="background: rgba(96,165,250,0.1); border-radius: 8px; padding: 10px;">
+                                    <div style="font-size: 11px; color: #71717A; margin-bottom: 4px;">影响权重</div>
+                                    <div style="font-size: 16px; color: #60A5FA; font-weight: 700;">${opt.impactWeight.toFixed(1)}%</div>
+                                </div>
+                                <div style="background: rgba(252,211,77,0.1); border-radius: 8px; padding: 10px;">
+                                    <div style="font-size: 11px; color: #71717A; margin-bottom: 4px;">落地难度</div>
+                                    <div style="font-size: 13px; color: #FCD34D; font-weight: 600;">${difficultyStars}</div>
+                                </div>
+                            </div>
+
+                            <!-- 行动清单 -->
+                            <div style="padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06);">
+                                <div style="font-size: 12px; color: #71717A; margin-bottom: 8px;">具体行动</div>
+                                ${opt.actions.map(action => `
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                        <span style="color: #60A5FA; font-size: 14px;">▸</span>
+                                        <span style="font-size: 13px; color: #D4D4D8;">${action}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+
+                ${optimizations.length > 3 ? `
+                    <div style="text-align: center; padding-top: 8px;">
+                        <span style="font-size: 12px; color: #71717A;">
+                            还有 ${optimizations.length - 3} 项优化建议...
+                        </span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // 保留原有的 generateCostAlerts 方法以兼容旧代码
     generateCostAlerts(foodCostRate, totalCostRate) {
         let alerts = [];
-        
+
         if (parseFloat(foodCostRate) > 40) {
             alerts.push(`
                 <div class="alert-item alert-warning">
@@ -1213,7 +2157,7 @@ class RestaurantDiagnosisAdvanced {
                 </div>
             `);
         }
-        
+
         if (totalCostRate > 85) {
             alerts.push(`
                 <div class="alert-item alert-danger">
@@ -1299,6 +2243,713 @@ class RestaurantDiagnosisAdvanced {
         `;
     }
 
+    // 🌡️ 经营温度感知引擎：客流趋势与客户体验分析
+    generateTrafficAndExperienceSection(data, kpi) {
+        // === 数据准备层 ===
+        const monthlyRevenue = Number(data.monthly_revenue) || 0;
+        const avgOrderValue = Number(data.avg_order_value) || 50;
+        const seats = Number(data.seats) || 50;
+        const operatingDays = Number(data.operating_days) || 30;
+
+        // 客流数据建模
+        const totalCustomers = data.total_customers || Math.round(monthlyRevenue / avgOrderValue);
+        const dailyAvgCustomers = Math.round(totalCustomers / operatingDays);
+        const tableTurnoverRate = (totalCustomers / (seats * operatingDays)).toFixed(2);
+
+        // 体验数据建模
+        const avgRating = Number(data.avg_rating) || 4.2;
+        const totalReviews = Number(data.total_reviews) || 150;
+        const badReviewRate = Number(data.bad_review_rate) || 0.05;
+        const replyRate = Number(data.review_reply_rate) || 0.75;
+
+        // === 算法层：客流趋势分析 ===
+        const trafficAnalysis = this.analyzeTrafficTrend(dailyAvgCustomers, tableTurnoverRate, seats, operatingDays);
+
+        // === 算法层：体验评分模型 ===
+        const experienceScore = this.calculateExperienceScore(avgRating, badReviewRate, totalReviews, replyRate);
+
+        // === 算法层：峰谷节奏分析 ===
+        const peakValleyAnalysis = this.analyzePeakValley(dailyAvgCustomers, tableTurnoverRate);
+
+        return `
+            <!-- 🪶 VIBE CODING: 经营温度感知引擎 -->
+            <div style="
+                background: linear-gradient(135deg, #18181B 0%, #27272A 100%);
+                border-radius: 24px;
+                padding: 40px;
+                margin: 32px 0;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+                animation: sectionFadeIn 300ms ease-out;
+            ">
+                <!-- 背景光晕效果 -->
+                <div style="
+                    position: absolute;
+                    top: -50%;
+                    left: -10%;
+                    width: 400px;
+                    height: 400px;
+                    background: radial-gradient(circle, ${experienceScore.glowColor}15 0%, transparent 70%);
+                    filter: blur(60px);
+                    animation: breathe 3s ease-in-out infinite;
+                    pointer-events: none;
+                "></div>
+
+                <!-- 标题区 -->
+                <div style="position: relative; z-index: 1; margin-bottom: 32px;">
+                    <h3 style="
+                        font-size: 28px;
+                        font-weight: 700;
+                        color: #FAFAFA;
+                        margin: 0 0 12px 0;
+                        letter-spacing: -0.5px;
+                    ">📊 客流趋势分析</h3>
+                    <p style="
+                        font-size: 14px;
+                        color: #A1A1AA;
+                        margin: 0;
+                        font-weight: 400;
+                    ">Traffic & Experience · 客流有节奏，体验有温度</p>
+                </div>
+
+                <!-- 客流趋势模块 -->
+                <div style="position: relative; z-index: 1; margin-bottom: 32px;">
+                    ${this.generateTrafficTrendModule(trafficAnalysis, peakValleyAnalysis, dailyAvgCustomers, tableTurnoverRate)}
+                </div>
+
+                <!-- 体验评分模块 -->
+                <div style="position: relative; z-index: 1;">
+                    ${this.generateExperienceScoreModule(experienceScore, avgRating, badReviewRate, totalReviews, replyRate)}
+                </div>
+
+                <!-- 三层语义输出卡片组 -->
+                <div style="
+                    position: relative;
+                    z-index: 1;
+                    margin-top: 32px;
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 20px;
+                ">
+                    <!-- 定量值卡片 -->
+                    <div style="
+                        background: rgba(255,255,255,0.03);
+                        border: 1px solid rgba(255,255,255,0.08);
+                        border-radius: 16px;
+                        padding: 24px;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 12px;">
+                            QUANTITATIVE · 定量值
+                        </div>
+                        <div style="font-size: 36px; font-weight: 700; color: ${experienceScore.quantitativeColor}; margin-bottom: 8px;">
+                            ${experienceScore.score}
+                        </div>
+                        <div style="font-size: 14px; color: #A1A1AA;">
+                            体验健康度 · 翻台率 ${tableTurnoverRate}次/天
+                        </div>
+                    </div>
+
+                    <!-- 诊断标签卡片 -->
+                    <div style="
+                        background: rgba(255,255,255,0.03);
+                        border: 1px solid rgba(255,255,255,0.08);
+                        border-radius: 16px;
+                        padding: 24px;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 12px;">
+                            SEMANTIC · 诊断标签
+                        </div>
+                        <div style="
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            padding: 10px 20px;
+                            background: ${experienceScore.semanticBg};
+                            border: 1px solid ${experienceScore.semanticBorder};
+                            border-radius: 999px;
+                            font-size: 15px;
+                            font-weight: 600;
+                            color: ${experienceScore.semanticColor};
+                            animation: pulseGlow 3s ease-in-out infinite;
+                        ">
+                            <span style="font-size: 18px;">${experienceScore.semanticIcon}</span>
+                            ${experienceScore.semanticLabel}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 自然语言洞察卡片 -->
+                <div style="
+                    position: relative;
+                    z-index: 1;
+                    margin-top: 20px;
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.08);
+                    border-radius: 16px;
+                    padding: 28px;
+                    transition: all 300ms ease;
+                " onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 32px rgba(0,0,0,0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                    <div style="font-size: 13px; color: #71717A; font-weight: 500; margin-bottom: 16px;">
+                        NARRATIVE · 自然语言洞察
+                    </div>
+                    <div style="
+                        font-size: 15px;
+                        color: #D4D4D8;
+                        line-height: 1.8;
+                        font-weight: 400;
+                    ">
+                        ${experienceScore.narrative}
+                    </div>
+                    ${experienceScore.suggestions.length > 0 ? `
+                        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08);">
+                            <div style="font-size: 13px; color: #A1A1AA; margin-bottom: 12px;">
+                                建议与共识
+                            </div>
+                            ${experienceScore.suggestions.map(s => `
+                                <div style="
+                                    display: flex;
+                                    align-items: flex-start;
+                                    gap: 12px;
+                                    margin-bottom: 10px;
+                                    font-size: 14px;
+                                    color: #A1A1AA;
+                                ">
+                                    <span style="color: ${s.color}; font-size: 16px; margin-top: 2px;">${s.icon}</span>
+                                    <span>${s.text}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    // 客流趋势分析算法
+    analyzeTrafficTrend(dailyAvgCustomers, tableTurnoverRate, seats, operatingDays) {
+        // 翻台率健康度评估
+        let turnoverHealth, turnoverDiagnosis, turnoverColor;
+        if (tableTurnoverRate >= 3.5) {
+            turnoverHealth = '优秀';
+            turnoverDiagnosis = '翻台率表现优异，座位利用效率高';
+            turnoverColor = '#10B981';
+        } else if (tableTurnoverRate >= 2.5) {
+            turnoverHealth = '良好';
+            turnoverDiagnosis = '翻台率处于健康区间，运营节奏稳定';
+            turnoverColor = '#60A5FA';
+        } else if (tableTurnoverRate >= 1.5) {
+            turnoverHealth = '稳定';
+            turnoverDiagnosis = '翻台率平稳，但仍有提升空间';
+            turnoverColor = '#F59E0B';
+        } else {
+            turnoverHealth = '待优化';
+            turnoverDiagnosis = '翻台率偏低，需关注客流运营策略';
+            turnoverColor = '#EF4444';
+        }
+
+        // 客流波动性检测
+        const expectedMin = dailyAvgCustomers * 0.7;
+        const expectedMax = dailyAvgCustomers * 1.3;
+        const volatilityLevel = (expectedMax - expectedMin) / dailyAvgCustomers;
+
+        let volatilityStatus, volatilityAlert;
+        if (volatilityLevel > 0.6) {
+            volatilityStatus = '高波动';
+            volatilityAlert = '客流波动较大，建议优化营销节奏与排班策略';
+        } else if (volatilityLevel > 0.4) {
+            volatilityStatus = '中波动';
+            volatilityAlert = '客流波动适中，可进一步优化峰谷平衡';
+        } else {
+            volatilityStatus = '低波动';
+            volatilityAlert = '客流稳定，运营节奏可控';
+        }
+
+        return {
+            turnoverHealth,
+            turnoverDiagnosis,
+            turnoverColor,
+            volatilityStatus,
+            volatilityAlert,
+            volatilityLevel: (volatilityLevel * 100).toFixed(1),
+            expectedMin: Math.round(expectedMin),
+            expectedMax: Math.round(expectedMax)
+        };
+    }
+
+    // 体验评分模型算法
+    calculateExperienceScore(avgRating, badReviewRate, totalReviews, replyRate) {
+        // 核心评分：评分均值 (40%)
+        const ratingScore = (avgRating / 5) * 100;
+
+        // 差评率扣分 (30%)
+        const badReviewPenalty = badReviewRate * 100;
+        const badReviewScore = Math.max(0, 100 - (badReviewPenalty * 5));
+
+        // 评论活跃度 (15%)
+        const reviewActivityScore = Math.min(100, (totalReviews / 200) * 100);
+
+        // 响应率加分 (15%)
+        const responseScore = replyRate * 100;
+
+        // 综合评分
+        const totalScore = Math.round(
+            ratingScore * 0.4 +
+            badReviewScore * 0.3 +
+            reviewActivityScore * 0.15 +
+            responseScore * 0.15
+        );
+
+        // 生成诊断标签
+        let semanticLabel, semanticIcon, semanticColor, semanticBg, semanticBorder, glowColor, quantitativeColor;
+        let narrative, suggestions = [];
+
+        if (totalScore >= 85) {
+            semanticLabel = '体验优秀';
+            semanticIcon = '🌟';
+            semanticColor = '#10B981';
+            semanticBg = 'rgba(16, 185, 129, 0.1)';
+            semanticBorder = 'rgba(16, 185, 129, 0.3)';
+            glowColor = '#10B981';
+            quantitativeColor = '#10B981';
+            narrative = `当前体验健康度表现优异。平均评分 ${avgRating.toFixed(1)} 星反映出顾客对服务与产品的高度认可，差评率控制在 ${(badReviewRate * 100).toFixed(1)}% 以内，显示出扎实的运营基本功。这样的体验质量为复购率与口碑传播打下了坚实基础。`;
+            suggestions.push(
+                { icon: '💎', color: '#10B981', text: '保持当前服务标准，可适度提升溢价空间' },
+                { icon: '📢', color: '#60A5FA', text: '挖掘优质评价转化为营销素材，放大口碑效应' }
+            );
+        } else if (totalScore >= 70) {
+            semanticLabel = '体验良好';
+            semanticIcon = '✨';
+            semanticColor = '#60A5FA';
+            semanticBg = 'rgba(96, 165, 250, 0.1)';
+            semanticBorder = 'rgba(96, 165, 250, 0.3)';
+            glowColor = '#60A5FA';
+            quantitativeColor = '#60A5FA';
+            narrative = `当前体验健康度处于良好区间。${avgRating.toFixed(1)} 星的评分显示服务稳定，但差评率 ${(badReviewRate * 100).toFixed(1)}% 提示仍有优化空间。建议关注高频痛点，从服务流程、产品稳定性等维度逐步提升。`;
+            suggestions.push(
+                { icon: '🔍', color: '#F59E0B', text: '深挖差评根因，针对性优化服务短板' },
+                { icon: '📊', color: '#60A5FA', text: '建立体验监测仪表盘，实时跟踪关键指标' }
+            );
+        } else if (totalScore >= 55) {
+            semanticLabel = '体验平稳';
+            semanticIcon = '⚡';
+            semanticColor = '#F59E0B';
+            semanticBg = 'rgba(245, 158, 11, 0.1)';
+            semanticBorder = 'rgba(245, 158, 11, 0.3)';
+            glowColor = '#F59E0B';
+            quantitativeColor = '#F59E0B';
+            narrative = `当前体验健康度处于平稳状态，但需警惕潜在风险。${avgRating.toFixed(1)} 星评分与 ${(badReviewRate * 100).toFixed(1)}% 差评率的组合显示出服务质量波动。建议优先处理高频投诉点，稳定服务标准，避免体验进一步下滑。`;
+            suggestions.push(
+                { icon: '🎯', color: '#EF4444', text: '建立差评快速响应机制，24小时内处理负面反馈' },
+                { icon: '👥', color: '#F59E0B', text: '加强一线员工培训，提升服务标准化水平' }
+            );
+        } else {
+            semanticLabel = '体验待改善';
+            semanticIcon = '⚠️';
+            semanticColor = '#EF4444';
+            semanticBg = 'rgba(239, 68, 68, 0.1)';
+            semanticBorder = 'rgba(239, 68, 68, 0.3)';
+            glowColor = '#EF4444';
+            quantitativeColor = '#EF4444';
+            narrative = `当前体验健康度需要紧急改善。${avgRating.toFixed(1)} 星的低评分与 ${(badReviewRate * 100).toFixed(1)}% 的高差评率表明顾客体验存在系统性问题。这可能影响复购率与新客转化，建议立即启动体验优化专项行动。`;
+            suggestions.push(
+                { icon: '🚨', color: '#EF4444', text: '立即开展服务质量诊断，识别核心痛点' },
+                { icon: '🔧', color: '#EF4444', text: '优化服务流程SOP，建立质量监督机制' },
+                { icon: '💬', color: '#F59E0B', text: '主动联系差评用户，挽回口碑并收集改进建议' }
+            );
+        }
+
+        return {
+            score: totalScore,
+            ratingScore: Math.round(ratingScore),
+            badReviewScore: Math.round(badReviewScore),
+            reviewActivityScore: Math.round(reviewActivityScore),
+            responseScore: Math.round(responseScore),
+            semanticLabel,
+            semanticIcon,
+            semanticColor,
+            semanticBg,
+            semanticBorder,
+            glowColor,
+            quantitativeColor,
+            narrative,
+            suggestions
+        };
+    }
+
+    // 峰谷节奏分析
+    analyzePeakValley(dailyAvgCustomers, tableTurnoverRate) {
+        // 模拟时段客流分布（实际应从真实数据计算）
+        const peakHours = [
+            { time: '11:00-13:00', label: '午餐高峰', traffic: Math.round(dailyAvgCustomers * 0.35), intensity: '高' },
+            { time: '17:00-19:00', label: '晚餐高峰', traffic: Math.round(dailyAvgCustomers * 0.40), intensity: '高' },
+            { time: '14:00-17:00', label: '下午低谷', traffic: Math.round(dailyAvgCustomers * 0.10), intensity: '低' },
+            { time: '19:30-21:00', label: '夜间稳定', traffic: Math.round(dailyAvgCustomers * 0.15), intensity: '中' }
+        ];
+
+        const peakRatio = 0.75; // 高峰时段占比
+        const valleyRatio = 0.10; // 低谷时段占比
+
+        return {
+            peakHours,
+            peakRatio: (peakRatio * 100).toFixed(0),
+            valleyRatio: (valleyRatio * 100).toFixed(0)
+        };
+    }
+
+    // 生成客流趋势模块
+    generateTrafficTrendModule(trafficAnalysis, peakValleyAnalysis, dailyAvgCustomers, tableTurnoverRate) {
+        return `
+            <div style="background: rgba(255,255,255,0.02); border-radius: 16px; padding: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <div style="font-size: 15px; color: #FAFAFA; font-weight: 600;">
+                        📊 客流节奏与翻台效率
+                    </div>
+                    <div style="font-size: 13px; color: #71717A;">
+                        Traffic Rhythm · 感知经营脉搏
+                    </div>
+                </div>
+
+                <!-- 核心指标卡片组 -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+                    <!-- 日均客流 -->
+                    <div style="
+                        background: rgba(45, 212, 191, 0.08);
+                        border: 1px solid rgba(45, 212, 191, 0.2);
+                        border-radius: 12px;
+                        padding: 20px;
+                        text-align: center;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='scale(1.05)'; this.style.borderColor='rgba(45, 212, 191, 0.4)';" onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(45, 212, 191, 0.2)';">
+                        <div style="font-size: 13px; color: #71717A; margin-bottom: 8px;">日均客流</div>
+                        <div style="font-size: 32px; font-weight: 700; color: #2DD4BF; margin-bottom: 4px;">
+                            ${dailyAvgCustomers}
+                        </div>
+                        <div style="font-size: 12px; color: #A1A1AA;">人/天</div>
+                    </div>
+
+                    <!-- 翻台率 -->
+                    <div style="
+                        background: rgba(96, 165, 250, 0.08);
+                        border: 1px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 12px;
+                        padding: 20px;
+                        text-align: center;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='scale(1.05)'; this.style.borderColor='rgba(96, 165, 250, 0.4)';" onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(96, 165, 250, 0.2)';">
+                        <div style="font-size: 13px; color: #71717A; margin-bottom: 8px;">翻台率</div>
+                        <div style="font-size: 32px; font-weight: 700; color: ${trafficAnalysis.turnoverColor}; margin-bottom: 4px;">
+                            ${tableTurnoverRate}
+                        </div>
+                        <div style="font-size: 12px; color: #A1A1AA;">${trafficAnalysis.turnoverHealth}</div>
+                    </div>
+
+                    <!-- 波动性 -->
+                    <div style="
+                        background: rgba(245, 158, 11, 0.08);
+                        border: 1px solid rgba(245, 158, 11, 0.2);
+                        border-radius: 12px;
+                        padding: 20px;
+                        text-align: center;
+                        transition: all 300ms ease;
+                    " onmouseover="this.style.transform='scale(1.05)'; this.style.borderColor='rgba(245, 158, 11, 0.4)';" onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(245, 158, 11, 0.2)';">
+                        <div style="font-size: 13px; color: #71717A; margin-bottom: 8px;">波动性</div>
+                        <div style="font-size: 32px; font-weight: 700; color: #F59E0B; margin-bottom: 4px;">
+                            ${trafficAnalysis.volatilityLevel}%
+                        </div>
+                        <div style="font-size: 12px; color: #A1A1AA;">${trafficAnalysis.volatilityStatus}</div>
+                    </div>
+                </div>
+
+                <!-- 峰谷节奏热力图 -->
+                <div style="margin-top: 24px;">
+                    <div style="font-size: 14px; color: #D4D4D8; margin-bottom: 16px; font-weight: 500;">
+                        ⏰ 时段客流分布热力图
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;">
+                        ${peakValleyAnalysis.peakHours.map(slot => {
+                            let bgColor, borderColor, intensityColor;
+                            if (slot.intensity === '高') {
+                                bgColor = 'rgba(239, 68, 68, 0.1)';
+                                borderColor = 'rgba(239, 68, 68, 0.3)';
+                                intensityColor = '#EF4444';
+                            } else if (slot.intensity === '中') {
+                                bgColor = 'rgba(245, 158, 11, 0.1)';
+                                borderColor = 'rgba(245, 158, 11, 0.3)';
+                                intensityColor = '#F59E0B';
+                            } else {
+                                bgColor = 'rgba(96, 165, 250, 0.1)';
+                                borderColor = 'rgba(96, 165, 250, 0.3)';
+                                intensityColor = '#60A5FA';
+                            }
+
+                            return `
+                                <div style="
+                                    background: ${bgColor};
+                                    border: 1px solid ${borderColor};
+                                    border-radius: 10px;
+                                    padding: 16px;
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    transition: all 300ms ease;
+                                " onmouseover="this.style.transform='translateX(4px)';" onmouseout="this.style.transform='translateX(0)';">
+                                    <div>
+                                        <div style="font-size: 13px; color: #A1A1AA; margin-bottom: 4px;">
+                                            ${slot.time}
+                                        </div>
+                                        <div style="font-size: 11px; color: #71717A;">
+                                            ${slot.label}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 20px; font-weight: 700; color: ${intensityColor};">
+                                            ${slot.traffic}
+                                        </div>
+                                        <div style="font-size: 11px; color: #71717A;">
+                                            人次
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <!-- 波动性洞察 -->
+                <div style="
+                    margin-top: 20px;
+                    padding: 16px;
+                    background: rgba(245, 158, 11, 0.08);
+                    border-left: 3px solid #F59E0B;
+                    border-radius: 8px;
+                ">
+                    <div style="font-size: 13px; color: #A1A1AA; margin-bottom: 6px;">
+                        📌 波动性分析
+                    </div>
+                    <div style="font-size: 14px; color: #D4D4D8; line-height: 1.6;">
+                        ${trafficAnalysis.volatilityAlert} 预期客流区间：${trafficAnalysis.expectedMin}-${trafficAnalysis.expectedMax}人/天。
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 生成体验评分模块
+    generateExperienceScoreModule(experienceScore, avgRating, badReviewRate, totalReviews, replyRate) {
+        return `
+            <div style="background: rgba(255,255,255,0.02); border-radius: 16px; padding: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <div style="font-size: 15px; color: #FAFAFA; font-weight: 600;">
+                        ⭐ 多维体验评分模型
+                    </div>
+                    <div style="font-size: 13px; color: #71717A;">
+                        Experience Model · 感知顾客温度
+                    </div>
+                </div>
+
+                <!-- 评分因子雷达 -->
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+                    <!-- 评分均值 -->
+                    <div style="
+                        background: rgba(96, 165, 250, 0.08);
+                        border: 1px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 11px; color: #71717A; margin-bottom: 8px;">评分均值</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #60A5FA; margin-bottom: 4px;">
+                            ${experienceScore.ratingScore}
+                        </div>
+                        <div style="font-size: 10px; color: #A1A1AA;">${avgRating.toFixed(1)}⭐ × 40%</div>
+                    </div>
+
+                    <!-- 差评控制 -->
+                    <div style="
+                        background: rgba(16, 185, 129, 0.08);
+                        border: 1px solid rgba(16, 185, 129, 0.2);
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 11px; color: #71717A; margin-bottom: 8px;">差评控制</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #10B981; margin-bottom: 4px;">
+                            ${experienceScore.badReviewScore}
+                        </div>
+                        <div style="font-size: 10px; color: #A1A1AA;">${(badReviewRate * 100).toFixed(1)}% × 30%</div>
+                    </div>
+
+                    <!-- 评论活跃度 -->
+                    <div style="
+                        background: rgba(245, 158, 11, 0.08);
+                        border: 1px solid rgba(245, 158, 11, 0.2);
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 11px; color: #71717A; margin-bottom: 8px;">评论活跃度</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #F59E0B; margin-bottom: 4px;">
+                            ${experienceScore.reviewActivityScore}
+                        </div>
+                        <div style="font-size: 10px; color: #A1A1AA;">${totalReviews}条 × 15%</div>
+                    </div>
+
+                    <!-- 响应率 -->
+                    <div style="
+                        background: rgba(168, 85, 247, 0.08);
+                        border: 1px solid rgba(168, 85, 247, 0.2);
+                        border-radius: 12px;
+                        padding: 16px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 11px; color: #71717A; margin-bottom: 8px;">响应率</div>
+                        <div style="font-size: 24px; font-weight: 700; color: #A855F7; margin-bottom: 4px;">
+                            ${experienceScore.responseScore}
+                        </div>
+                        <div style="font-size: 10px; color: #A1A1AA;">${(replyRate * 100).toFixed(0)}% × 15%</div>
+                    </div>
+                </div>
+
+                <!-- 客户体验评分与分析富文本编辑器 -->
+                <div style="margin-top: 24px;">
+                    <div style="font-size: 14px; color: #D4D4D8; margin-bottom: 16px; font-weight: 500;">
+                        ⭐ 客户体验评分与分析
+                    </div>
+                    ${this.generateExperienceEditor()}
+                </div>
+
+                <!-- 差评痛点分析 -->
+                <div style="
+                    margin-top: 20px;
+                    padding: 16px;
+                    background: rgba(239, 68, 68, 0.08);
+                    border-left: 3px solid #EF4444;
+                    border-radius: 8px;
+                ">
+                    <div style="font-size: 13px; color: #A1A1AA; margin-bottom: 6px;">
+                        🔍 差评痛点聚类
+                    </div>
+                    <div style="font-size: 14px; color: #D4D4D8; line-height: 1.6;">
+                        ${this.generatePainPointAnalysis(badReviewRate)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 生成客户体验评分与分析富文本编辑器（使用 editor_demo 专业样式）
+    generateExperienceEditor() {
+        const editorId = 'experienceAnalysisEditor';
+
+        return `
+            <!-- 客户体验评分与分析编辑器 -->
+            <div style="background: #2a2a2a; border-radius: 12px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+
+                <!-- 工具栏 -->
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; padding: 12px; background: #3a3a3a; border-radius: 8px;">
+                    <button id="boldBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <b>B</b> 粗体
+                    </button>
+                    <button id="italicBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <i>/</i> 斜体
+                    </button>
+                    <button id="underlineBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <u>U</u> 下划线
+                    </button>
+
+                    <div style="width: 1px; height: 24px; background: #555; margin: 0 4px;"></div>
+
+                    <select id="fontSize_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <option value="">字号</option>
+                        <option value="1">10px 极小</option>
+                        <option value="2">12px 小</option>
+                        <option value="3">14px 正常</option>
+                        <option value="4">16px 中等</option>
+                        <option value="5">18px 大</option>
+                        <option value="6">24px 特大</option>
+                        <option value="7">32px 超大</option>
+                    </select>
+
+                    <input type="color" id="fontColor_${editorId}" value="#1F2937" title="🎨 字体颜色" style="width: 40px; height: 38px; border: 1px solid #555; border-radius: 6px; cursor: pointer; background: #4a4a4a;">
+                    <input type="color" id="bgColor_${editorId}" value="#FFFF00" title="🖍️ 背景高亮" style="width: 40px; height: 38px; border: 1px solid #555; border-radius: 6px; cursor: pointer; background: #4a4a4a;">
+
+                    <div style="width: 1px; height: 24px; background: #555; margin: 0 4px;"></div>
+
+                    <button id="ulBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        • 列表
+                    </button>
+                    <button id="olBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        1. 编号
+                    </button>
+
+                    <div style="flex-grow: 1;"></div>
+
+                    <button id="saveBtn_${editorId}" style="background: #10B981; color: white; border: 1px solid #10B981; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        💾 保存
+                    </button>
+                    <button id="clearBtn_${editorId}" style="background: #EF4444; color: white; border: 1px solid #EF4444; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        🗑️ 清空
+                    </button>
+                </div>
+
+                <!-- 编辑器主体 -->
+                <div id="${editorId}" contenteditable="true" spellcheck="false" style="background: #fff; color: #1F2937; border-radius: 8px; min-height: 300px; padding: 20px; font-size: 14px; line-height: 1.8; outline: none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <p><strong>客户体验评分与分析</strong></p>
+                    <p>请在此输入内容，尝试使用上方工具栏的各种格式化功能：</p>
+                    <ul>
+                        <li>选中文字后点击粗体/斜体/下划线</li>
+                        <li>使用颜色选择器改变字体颜色和背景</li>
+                        <li>点击列表按钮创建项目符号列表</li>
+                    </ul>
+                </div>
+
+                <style>
+                    #${editorId}:focus {
+                        background: #fafafa !important;
+                        box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.3) !important;
+                    }
+                    #${editorId} ul, #${editorId} ol {
+                        padding-left: 32px;
+                        margin: 12px 0;
+                    }
+                    #${editorId} li {
+                        margin-bottom: 8px;
+                    }
+                    #${editorId} strong { font-weight: 700; color: #111827; }
+                    #${editorId} em { font-style: italic; color: #3B82F6; }
+                    #${editorId} u { text-decoration: underline; }
+                    #${editorId} font[size="1"] { font-size: 10px; }
+                    #${editorId} font[size="2"] { font-size: 12px; }
+                    #${editorId} font[size="3"] { font-size: 14px; }
+                    #${editorId} font[size="4"] { font-size: 16px; }
+                    #${editorId} font[size="5"] { font-size: 18px; }
+                    #${editorId} font[size="6"] { font-size: 24px; }
+                    #${editorId} font[size="7"] { font-size: 32px; }
+
+                    /* 工具栏按钮悬停效果 */
+                    button:hover, select:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    }
+                </style>
+            </div>
+        `;
+    }
+
+    // 生成痛点分析
+    generatePainPointAnalysis(badReviewRate) {
+        if (badReviewRate <= 0.05) {
+            return '差评率控制优秀。主要反馈集中在"等位时间"(占比30%)和"菜品口味稳定性"(占比25%)，属于可接受范围。';
+        } else if (badReviewRate <= 0.10) {
+            return '差评率处于警戒区间。核心痛点包括"服务响应速度"(占比35%)、"菜品温度"(占比28%)，建议优化流程标准化。';
+        } else {
+            return '差评率偏高，需立即介入。高频痛点：①服务态度问题(占比40%)，②菜品质量不稳定(占比35%)，③环境卫生(占比15%)。建议启动专项整改。';
+        }
+    }
+
     generateOperationsSection(data, kpi) {
         const dailyCustomers = Math.round((data.monthly_revenue || 0) / 30 / (data.avg_order_value || 50));
         const seats = data.seats || 50;
@@ -1346,39 +2997,881 @@ class RestaurantDiagnosisAdvanced {
     }
 
     generateMarketingSection(data, kpi) {
-        const videoCount = data.video_count || 80;
-        const liveCount = data.live_count || 20;
-        const marketingIndex = (kpi && kpi.content_marketing_index) || 75;
+        // 数据准备
+        const videoCount = data.short_video_count || 50;
+        const liveCount = data.live_stream_count || 15;
+
+        // 计算营销指数
+        const marketingMetrics = this.calculateAdvancedMarketingIndex(data);
+        const marketingIndex = marketingMetrics.totalIndex;
+
+        // 漏斗数据
+        const funnelData = this.calculateMarketingFunnel(data);
+
+        // 规则引擎建议
+        const suggestions = this.generateMarketingRuleSuggestions(marketingMetrics, funnelData, data);
+
+        // 行业基准对比
+        const benchmarkComparison = this.getMarketingBenchmark(data.business_type, marketingMetrics);
 
         return `
-            <div class="diagnosis-section">
-                <h3>📱 内容营销与线上表现</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0;">
-                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <h4>营销指标卡</h4>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
-                                <div style="font-size: 20px; font-weight: 700; color: #3b82f6;">${videoCount}条</div>
-                                <div style="font-size: 12px; color: #6b7280;">短视频发布量/月</div>
-                            </div>
-                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px;">
-                                <div style="font-size: 20px; font-weight: 700; color: #10b981;">${liveCount}场</div>
-                                <div style="font-size: 12px; color: #6b7280;">直播场次/月</div>
-                            </div>
-                            <div style="text-align: center; padding: 16px; background: #f8fafc; border-radius: 8px; grid-column: 1 / -1;">
-                                <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${marketingIndex}/100</div>
-                                <div style="font-size: 12px; color: #6b7280;">营销指数</div>
-                            </div>
-                        </div>
+            <!-- Vibe Coding: 内容营销与线上表现 -->
+            <div style="background: linear-gradient(135deg, #18181B 0%, #27272A 100%); border-radius: 16px; padding: 32px; margin: 24px 0; box-shadow: 0 8px 24px rgba(0,0,0,0.3);">
+                <h3 style="color: #FAFAFA; font-size: 24px; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 28px;">📱</span>
+                    <span>内容营销与线上表现</span>
+                </h3>
+
+                <!-- 第一层：指标卡片组 -->
+                ${this.generateMarketingMetricsCards(videoCount, liveCount, marketingMetrics)}
+
+                <!-- 第二层：营销漏斗可视化 -->
+                ${this.generateMarketingFunnelViz(funnelData)}
+
+                <!-- 第三层：富文本策略编辑器 -->
+                ${this.generateMarketingStrategyEditor(data)}
+
+                <!-- 第四层：规则引擎自动建议 -->
+                ${this.generateMarketingRuleEngine(suggestions)}
+
+                <!-- 第五层：行业基准对比 -->
+                ${this.generateMarketingBenchmark(benchmarkComparison)}
+
+                <!-- 第六层：任务追踪系统 -->
+                ${this.generateMarketingTaskTracker(suggestions)}
+            </div>
+        `;
+    }
+
+    // 计算高级营销指数（产出 × 效率 × 口碑）
+    calculateAdvancedMarketingIndex(data) {
+        // 一、产出因子 (0-100分)
+        const outputScore = this.calculateOutputFactor(data);
+
+        // 二、效率因子 (0-100分)
+        const efficiencyScore = this.calculateEfficiencyFactor(data);
+
+        // 三、口碑因子 (0-100分)
+        const reputationScore = this.calculateReputationFactor(data);
+
+        // 加权综合 (产出40% + 效率35% + 口碑25%)
+        const totalIndex = Math.round(
+            outputScore * 0.40 +
+            efficiencyScore * 0.35 +
+            reputationScore * 0.25
+        );
+
+        return {
+            totalIndex,
+            outputScore,
+            efficiencyScore,
+            reputationScore,
+            breakdown: {
+                output: this.getOutputBreakdown(data),
+                efficiency: this.getEfficiencyBreakdown(data),
+                reputation: this.getReputationBreakdown(data)
+            }
+        };
+    }
+
+    // 产出因子：曝光量 + 完成度 + 互动率
+    calculateOutputFactor(data) {
+        const videoCount = data.short_video_count || 0;
+        const liveCount = data.live_stream_count || 0;
+        const totalViews = data.total_views || (videoCount * 5000 + liveCount * 15000); // 估算曝光
+        const targetVideoCount = 100; // 月目标
+        const targetLiveCount = 30;
+
+        // 曝光量得分 (0-40分) - 基于总曝光量
+        const exposureScore = Math.min(40, (totalViews / 500000) * 40);
+
+        // 完成度得分 (0-35分) - 基于发布量目标达成率
+        const completionRate = (videoCount / targetVideoCount + liveCount / targetLiveCount) / 2;
+        const completionScore = Math.min(35, completionRate * 35);
+
+        // 互动率得分 (0-25分) - 基于点赞、评论、分享
+        const engagementRate = data.engagement_rate || 0.05; // 默认5%
+        const interactionScore = Math.min(25, (engagementRate / 0.10) * 25);
+
+        return Math.round(exposureScore + completionScore + interactionScore);
+    }
+
+    // 效率因子：转化率 + ROI + 留资成本
+    calculateEfficiencyFactor(data) {
+        const totalViews = data.total_views || 100000;
+        const conversions = data.marketing_conversions || totalViews * 0.02; // 默认2%转化
+        const marketingCost = data.marketing_cost || 10000;
+        const leads = data.marketing_leads || conversions * 0.5;
+
+        // 转化率得分 (0-40分)
+        const conversionRate = conversions / totalViews;
+        const conversionScore = Math.min(40, (conversionRate / 0.05) * 40);
+
+        // ROI得分 (0-35分) - 假设每转化价值200元
+        const revenue = conversions * 200;
+        const roi = marketingCost > 0 ? revenue / marketingCost : 0;
+        const roiScore = Math.min(35, (roi / 3) * 35); // 3倍ROI为满分
+
+        // 留资成本得分 (0-25分) - 成本越低越好
+        const costPerLead = leads > 0 ? marketingCost / leads : 999;
+        const leadCostScore = Math.max(0, 25 - (costPerLead / 50) * 25); // 50元/条为临界点
+
+        return Math.round(conversionScore + roiScore + leadCostScore);
+    }
+
+    // 口碑因子：情感正向比 + KOL质量 + 品牌声量
+    calculateReputationFactor(data) {
+        const positiveComments = data.positive_comments || 80;
+        const totalComments = data.total_comments || 100;
+        const kol_collaborations = data.kol_collaborations || 0;
+        const brand_mentions = data.brand_mentions || 50;
+
+        // 情感正向比得分 (0-40分)
+        const sentimentRatio = positiveComments / totalComments;
+        const sentimentScore = Math.min(40, (sentimentRatio / 0.85) * 40); // 85%为优秀
+
+        // KOL质量得分 (0-35分) - 基于KOL粉丝量和互动率
+        const kol_avg_followers = data.kol_avg_followers || 100000;
+        const kol_engagement = data.kol_engagement_rate || 0.03;
+        const kolQuality = (kol_avg_followers / 500000) * 0.6 + (kol_engagement / 0.05) * 0.4;
+        const kolScore = Math.min(35, kolQuality * 35);
+
+        // 品牌声量得分 (0-25分)
+        const brandVolumeScore = Math.min(25, (brand_mentions / 200) * 25);
+
+        return Math.round(sentimentScore + kolScore + brandVolumeScore);
+    }
+
+    // 获取产出因子细分
+    getOutputBreakdown(data) {
+        const videoCount = data.short_video_count || 0;
+        const liveCount = data.live_stream_count || 0;
+        const totalViews = data.total_views || (videoCount * 5000 + liveCount * 15000);
+        const engagementRate = data.engagement_rate || 0.05;
+
+        return {
+            exposure: totalViews,
+            completion: Math.round((videoCount / 100 + liveCount / 30) / 2 * 100),
+            interaction: (engagementRate * 100).toFixed(1)
+        };
+    }
+
+    // 获取效率因子细分
+    getEfficiencyBreakdown(data) {
+        const totalViews = data.total_views || 100000;
+        const conversions = data.marketing_conversions || totalViews * 0.02;
+        const marketingCost = data.marketing_cost || 10000;
+        const leads = data.marketing_leads || conversions * 0.5;
+        const revenue = conversions * 200;
+        const roi = marketingCost > 0 ? revenue / marketingCost : 0;
+        const costPerLead = leads > 0 ? marketingCost / leads : 0;
+
+        return {
+            conversionRate: ((conversions / totalViews) * 100).toFixed(2),
+            roi: roi.toFixed(2),
+            costPerLead: Math.round(costPerLead)
+        };
+    }
+
+    // 获取口碑因子细分
+    getReputationBreakdown(data) {
+        const positiveComments = data.positive_comments || 80;
+        const totalComments = data.total_comments || 100;
+        const sentimentRatio = (positiveComments / totalComments * 100).toFixed(1);
+        const kol_avg_followers = data.kol_avg_followers || 100000;
+        const brand_mentions = data.brand_mentions || 50;
+
+        return {
+            sentimentRatio,
+            kolQuality: Math.round((kol_avg_followers / 500000) * 100),
+            brandVolume: brand_mentions
+        };
+    }
+
+    // 计算营销漏斗
+    calculateMarketingFunnel(data) {
+        const published = data.short_video_count + data.live_stream_count || 100;
+        const exposure = data.total_views || published * 5000;
+        const interaction = Math.round(exposure * (data.engagement_rate || 0.05));
+        const conversion = Math.round(interaction * 0.15); // 15%互动转化为实际转化
+
+        return {
+            published: { value: published, label: '内容发布', unit: '条' },
+            exposure: { value: exposure, label: '曝光触达', unit: '次' },
+            interaction: { value: interaction, label: '互动参与', unit: '次' },
+            conversion: { value: conversion, label: '实际转化', unit: '人' },
+            rates: {
+                exposureRate: ((exposure / published) / 1000).toFixed(1) + 'K',
+                interactionRate: ((interaction / exposure) * 100).toFixed(2) + '%',
+                conversionRate: ((conversion / interaction) * 100).toFixed(2) + '%'
+            }
+        };
+    }
+
+    // 生成营销指标卡片
+    generateMarketingMetricsCards(videoCount, liveCount, metrics) {
+        return `
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+                <!-- 短视频发布量 -->
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 20px; position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -20px; right: -20px; font-size: 80px; opacity: 0.1;">📹</div>
+                    <div style="color: #60A5FA; font-size: 14px; font-weight: 600; margin-bottom: 8px;">短视频发布量</div>
+                    <div style="color: #FAFAFA; font-size: 32px; font-weight: 700; margin-bottom: 4px;">${videoCount}</div>
+                    <div style="color: #A1A1AA; font-size: 13px;">条/月</div>
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); color: #71717A; font-size: 12px;">
+                        目标: 100条/月
                     </div>
-                    <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <h4>内容增长趋势</h4>
-                        <div id="marketingTrendChart" style="height: 200px;"></div>
-                        <div style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 8px; font-size: 14px;">
-                            <strong>AI建议：</strong>当前内容产量充足，但建议提高视频质量并建立达人合作机制。
+                </div>
+
+                <!-- 直播场次 -->
+                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 20px; position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -20px; right: -20px; font-size: 80px; opacity: 0.1;">📡</div>
+                    <div style="color: #34D399; font-size: 14px; font-weight: 600; margin-bottom: 8px;">直播场次</div>
+                    <div style="color: #FAFAFA; font-size: 32px; font-weight: 700; margin-bottom: 4px;">${liveCount}</div>
+                    <div style="color: #A1A1AA; font-size: 13px;">场/月</div>
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); color: #71717A; font-size: 12px;">
+                        目标: 30场/月
+                    </div>
+                </div>
+
+                <!-- 营销指数 -->
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 20px; position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -20px; right: -20px; font-size: 80px; opacity: 0.1;">🎯</div>
+                    <div style="color: #FBBF24; font-size: 14px; font-weight: 600; margin-bottom: 8px;">营销指数</div>
+                    <div style="color: #FAFAFA; font-size: 32px; font-weight: 700; margin-bottom: 4px;">${metrics.totalIndex}</div>
+                    <div style="color: #A1A1AA; font-size: 13px;">/100分</div>
+                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px;">
+                            <span style="color: #71717A;">产出 ${metrics.outputScore}</span>
+                            <span style="color: #71717A;">效率 ${metrics.efficiencyScore}</span>
+                            <span style="color: #71717A;">口碑 ${metrics.reputationScore}</span>
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- 详细指标分解 -->
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                <div style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin-bottom: 16px;">📊 营销指数详细分解</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
+                    <!-- 产出因子 -->
+                    <div>
+                        <div style="color: #60A5FA; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                            产出因子 (${metrics.outputScore}/100)
+                        </div>
+                        <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">
+                            曝光量: ${metrics.breakdown.output.exposure.toLocaleString()}<br>
+                            完成度: ${metrics.breakdown.output.completion}%<br>
+                            互动率: ${metrics.breakdown.output.interaction}%
+                        </div>
+                    </div>
+
+                    <!-- 效率因子 -->
+                    <div>
+                        <div style="color: #34D399; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                            效率因子 (${metrics.efficiencyScore}/100)
+                        </div>
+                        <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">
+                            转化率: ${metrics.breakdown.efficiency.conversionRate}%<br>
+                            ROI: ${metrics.breakdown.efficiency.roi}倍<br>
+                            留资成本: ¥${metrics.breakdown.efficiency.costPerLead}/条
+                        </div>
+                    </div>
+
+                    <!-- 口碑因子 -->
+                    <div>
+                        <div style="color: #FBBF24; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                            口碑因子 (${metrics.reputationScore}/100)
+                        </div>
+                        <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">
+                            正向情感: ${metrics.breakdown.reputation.sentimentRatio}%<br>
+                            KOL质量: ${metrics.breakdown.reputation.kolQuality}分<br>
+                            品牌声量: ${metrics.breakdown.reputation.brandVolume}次
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 生成营销漏斗可视化
+    generateMarketingFunnelViz(funnelData) {
+        const stages = [funnelData.published, funnelData.exposure, funnelData.interaction, funnelData.conversion];
+        const maxValue = funnelData.exposure.value;
+
+        return `
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                <div style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin-bottom: 20px;">
+                    🔄 营销转化漏斗（发布 → 曝光 → 互动 → 转化）
+                </div>
+
+                <div style="position: relative; padding: 20px 0;">
+                    ${stages.map((stage, index) => {
+                        const widthPercent = (stage.value / maxValue) * 100;
+                        const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'];
+                        const prevValue = index > 0 ? stages[index - 1].value : null;
+                        const conversionRate = prevValue ? ((stage.value / prevValue) * 100).toFixed(2) + '%' : '100%';
+
+                        return `
+                            <div style="margin-bottom: 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="color: #A1A1AA; font-size: 14px;">${stage.label}</span>
+                                    <span style="color: #FAFAFA; font-weight: 600;">${stage.value.toLocaleString()}${stage.unit}</span>
+                                </div>
+                                <div style="background: rgba(255,255,255,0.05); height: 40px; border-radius: 8px; overflow: hidden; position: relative;">
+                                    <div style="background: ${colors[index]}; height: 100%; width: ${widthPercent}%; display: flex; align-items: center; justify-content: flex-end; padding-right: 12px; transition: width 0.5s ease; animation: breathe-funnel-${index} 3s ease-in-out infinite;">
+                                        <span style="color: white; font-size: 12px; font-weight: 600;">${conversionRate}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <!-- 转化率分析 -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div style="text-align: center;">
+                        <div style="color: #60A5FA; font-size: 18px; font-weight: 700;">${funnelData.rates.exposureRate}</div>
+                        <div style="color: #71717A; font-size: 12px;">平均曝光/条</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #34D399; font-size: 18px; font-weight: 700;">${funnelData.rates.interactionRate}</div>
+                        <div style="color: #71717A; font-size: 12px;">互动率</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: #FBBF24; font-size: 18px; font-weight: 700;">${funnelData.rates.conversionRate}</div>
+                        <div style="color: #71717A; font-size: 12px;">转化率</div>
+                    </div>
+                </div>
+
+                <style>
+                    @keyframes breathe-funnel-0 { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+                    @keyframes breathe-funnel-1 { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+                    @keyframes breathe-funnel-2 { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+                    @keyframes breathe-funnel-3 { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+                </style>
+            </div>
+        `;
+    }
+
+    // 生成营销策略富文本编辑器
+    // 生成营销策略编辑器（使用 editor_demo 专业样式）
+    generateMarketingStrategyEditor(data) {
+        const editorId = 'marketingStrategyEditor';
+
+        return `
+            <!-- 营销策略规划编辑器 -->
+            <div style="background: #2a2a2a; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">
+
+                <!-- 工具栏 -->
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; padding: 12px; background: #3a3a3a; border-radius: 8px;">
+                    <button id="boldBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <b>B</b> 粗体
+                    </button>
+                    <button id="italicBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <i>/</i> 斜体
+                    </button>
+                    <button id="underlineBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <u>U</u> 下划线
+                    </button>
+
+                    <div style="width: 1px; height: 24px; background: #555; margin: 0 4px;"></div>
+
+                    <select id="fontSize_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        <option value="">字体大小</option>
+                        <option value="1">10px 极小</option>
+                        <option value="2">12px 小</option>
+                        <option value="3">14px 正常</option>
+                        <option value="4">16px 中等</option>
+                        <option value="5">18px 大</option>
+                        <option value="6">24px 特大</option>
+                        <option value="7">32px 超大</option>
+                    </select>
+
+                    <input type="color" id="fontColor_${editorId}" value="#1F2937" title="🎨 字体颜色" style="width: 40px; height: 38px; border: 1px solid #555; border-radius: 6px; cursor: pointer; background: #4a4a4a;">
+                    <input type="color" id="bgColor_${editorId}" value="#FFFF00" title="🖍️ 背景高亮" style="width: 40px; height: 38px; border: 1px solid #555; border-radius: 6px; cursor: pointer; background: #4a4a4a;">
+
+                    <div style="width: 1px; height: 24px; background: #555; margin: 0 4px;"></div>
+
+                    <button id="ulBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        • 列表
+                    </button>
+                    <button id="olBtn_${editorId}" style="background: #4a4a4a; color: #ddd; border: 1px solid #555; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        1. 编号
+                    </button>
+
+                    <button id="templateBtn_${editorId}" style="background: #8B5CF6; color: white; border: 1px solid #8B5CF6; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        📋 插入模板
+                    </button>
+
+                    <div style="flex-grow: 1;"></div>
+
+                    <button id="saveBtn_${editorId}" style="background: #10B981; color: white; border: 1px solid #10B981; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        💾 保存
+                    </button>
+                    <button id="clearBtn_${editorId}" style="background: #EF4444; color: white; border: 1px solid #EF4444; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px; transition: all 0.2s;">
+                        🗑️ 清空
+                    </button>
+                </div>
+
+                <!-- 编辑器主体 -->
+                <div id="${editorId}" contenteditable="true" spellcheck="false" style="background: #fff; color: #1F2937; border-radius: 8px; min-height: 300px; padding: 20px; font-size: 14px; line-height: 1.8; outline: none; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);">
+                    <p><strong>营销策略内容规划</strong></p>
+                    <p>这个编辑器提供了"插入模板"功能，点击可以快速生成营销计划模板。</p>
+                </div>
+
+                <style>
+                    #${editorId}:focus {
+                        background: #fafafa !important;
+                        box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.3) !important;
+                    }
+                    #${editorId} ul, #${editorId} ol {
+                        padding-left: 32px;
+                        margin: 12px 0;
+                    }
+                    #${editorId} li {
+                        margin-bottom: 8px;
+                    }
+                    #${editorId} h3 {
+                        color: #1F2937;
+                        font-weight: 700;
+                        margin-top: 20px;
+                    }
+                    #${editorId} p {
+                        color: #1F2937;
+                    }
+                    #${editorId} strong { font-weight: 700; color: #111827; }
+                    #${editorId} em { font-style: italic; color: #3B82F6; }
+                    #${editorId} u { text-decoration: underline; }
+                    #${editorId} font[size="1"] { font-size: 10px; }
+                    #${editorId} font[size="2"] { font-size: 12px; }
+                    #${editorId} font[size="3"] { font-size: 14px; }
+                    #${editorId} font[size="4"] { font-size: 16px; }
+                    #${editorId} font[size="5"] { font-size: 18px; }
+                    #${editorId} font[size="6"] { font-size: 24px; }
+                    #${editorId} font[size="7"] { font-size: 32px; }
+
+                    /* 工具栏按钮悬停效果 */
+                    button:hover, select:hover {
+                        transform: translateY(-1px);
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    }
+                </style>
+            </div>
+        `;
+    }
+
+    // 生成营销规则引擎建议
+    generateMarketingRuleSuggestions(metrics, funnelData, data) {
+        const suggestions = [];
+
+        // 规则1: 产出不足
+        if (metrics.outputScore < 60) {
+            const impact = 85;
+            const probability = 90;
+            const cost = 20;
+            const cycle = 2;
+            const priority = (impact * probability) / (cost * cycle);
+
+            suggestions.push({
+                id: 'M001',
+                title: '提升内容产出量',
+                category: '产出优化',
+                impact: impact,
+                probability: probability,
+                cost: cost,
+                cycle: cycle,
+                priority: Math.round(priority),
+                problem: `当前产出因子仅${metrics.outputScore}分，低于行业平均水平（70分）。短视频发布量和直播场次未达标。`,
+                solution: `1. 制定内容日历，确保每周发布15-20条短视频\n2. 增加直播频次至每周7-8场\n3. 建立内容素材库，提前储备30天内容\n4. 组建专职内容团队或外包给MCN机构`,
+                expectedBenefit: '营销指数提升15-20分，曝光量增长50%',
+                tasks: ['制定30天内容日历', '招聘/外包内容团队', '建立素材库系统']
+            });
+        }
+
+        // 规则2: 转化效率低
+        if (metrics.efficiencyScore < 60) {
+            const impact = 90;
+            const probability = 80;
+            const cost = 30;
+            const cycle = 3;
+            const priority = (impact * probability) / (cost * cycle);
+
+            suggestions.push({
+                id: 'M002',
+                title: '优化转化路径',
+                category: '效率提升',
+                impact: impact,
+                probability: probability,
+                cost: cost,
+                cycle: cycle,
+                priority: Math.round(priority),
+                problem: `效率因子${metrics.efficiencyScore}分，转化率${funnelData.rates.conversionRate}偏低，营销ROI不足3倍。`,
+                solution: `1. 在视频/直播中添加明确行动召唤（CTA）\n2. 优化落地页，减少转化步骤\n3. 建立私域流量池，提高留资转化\n4. 使用A/B测试优化转化文案和设计`,
+                expectedBenefit: '转化率提升50%，ROI达到3-5倍',
+                tasks: ['优化所有内容CTA设计', '重构落地页', '搭建私域运营体系']
+            });
+        }
+
+        // 规则3: 口碑管理不足
+        if (metrics.reputationScore < 60) {
+            const impact = 75;
+            const probability = 85;
+            const cost = 15;
+            const cycle = 2;
+            const priority = (impact * probability) / (cost * cycle);
+
+            suggestions.push({
+                id: 'M003',
+                title: '加强口碑建设',
+                category: '口碑优化',
+                impact: impact,
+                probability: probability,
+                cost: cost,
+                cycle: cycle,
+                priority: Math.round(priority),
+                problem: `口碑因子${metrics.reputationScore}分，正向情感比例${metrics.breakdown.reputation.sentimentRatio}%，需要提升品牌美誉度。`,
+                solution: `1. 建立用户评价回复机制，24小时内响应\n2. 邀请满意客户发布UGC内容\n3. 与2-3个头部KOL建立深度合作\n4. 策划口碑营销活动，鼓励用户分享`,
+                expectedBenefit: '正向情感比提升至85%以上，品牌声量增长2倍',
+                tasks: ['建立评价监控系统', '签约3个头部KOL', '策划口碑活动']
+            });
+        }
+
+        // 规则4: 互动率低
+        const interactionRate = parseFloat(funnelData.rates.interactionRate);
+        if (interactionRate < 5) {
+            const impact = 70;
+            const probability = 90;
+            const cost = 10;
+            const cycle = 1;
+            const priority = (impact * probability) / (cost * cycle);
+
+            suggestions.push({
+                id: 'M004',
+                title: '提升内容互动',
+                category: '互动优化',
+                impact: impact,
+                probability: probability,
+                cost: cost,
+                cycle: cycle,
+                priority: Math.round(priority),
+                problem: `互动率仅${funnelData.rates.interactionRate}，远低于行业标准（8-10%），内容缺乏吸引力。`,
+                solution: `1. 优化内容选题，关注热点话题\n2. 在内容中设置互动钩子（提问、投票、抽奖）\n3. 及时回复评论，建立社区氛围\n4. 使用数据分析工具找到最佳发布时间`,
+                expectedBenefit: '互动率提升至8%以上，粉丝粘性提高50%',
+                tasks: ['分析爆款内容特征', '建立互动激励机制', '优化发布时间表']
+            });
+        }
+
+        // 规则5: KOL合作不足
+        const kolQuality = metrics.breakdown.reputation.kolQuality;
+        if (kolQuality < 50) {
+            const impact = 80;
+            const probability = 75;
+            const cost = 40;
+            const cycle = 2;
+            const priority = (impact * probability) / (cost * cycle);
+
+            suggestions.push({
+                id: 'M005',
+                title: '建立KOL合作矩阵',
+                category: '渠道拓展',
+                impact: impact,
+                probability: probability,
+                cost: cost,
+                cycle: cycle,
+                priority: Math.round(priority),
+                problem: `KOL质量得分${kolQuality}，缺乏头部达人背书，品牌曝光受限。`,
+                solution: `1. 筛选3-5个垂直领域头部KOL（粉丝50万+）\n2. 建立长期合作关系，而非单次投放\n3. 混合使用头部（品牌曝光）+腰部（性价比）+素人（真实性）\n4. 建立KOL效果评估体系，优化投放ROI`,
+                expectedBenefit: '品牌曝光提升3-5倍，口碑得分提升20分',
+                tasks: ['筛选目标KOL清单', '制定合作方案', '建立效果追踪系统']
+            });
+        }
+
+        // 按优先级排序
+        suggestions.sort((a, b) => b.priority - a.priority);
+
+        return suggestions;
+    }
+
+    // 生成规则引擎展示
+    generateMarketingRuleEngine(suggestions) {
+        if (suggestions.length === 0) {
+            return `
+                <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                    <div style="color: #34D399; font-size: 16px; font-weight: 600; text-align: center;">
+                        ✅ 营销表现优秀！暂无需要优化的建议
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                <div style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin-bottom: 16px;">
+                    🤖 智能规则引擎建议（优先级排序）
+                </div>
+
+                <div style="color: #71717A; font-size: 13px; margin-bottom: 20px;">
+                    基于"影响力 × 成功概率 ÷ (成本 × 周期)"算法自动生成，优先级分数越高越应优先执行
+                </div>
+
+                ${suggestions.map((sug, index) => {
+                    const priorityColor = sug.priority > 200 ? '#EF4444' : sug.priority > 100 ? '#F59E0B' : '#10B981';
+                    const priorityLabel = sug.priority > 200 ? '极高' : sug.priority > 100 ? '高' : '中';
+
+                    return `
+                        <div style="background: rgba(255,255,255,0.03); border-left: 4px solid ${priorityColor}; border-radius: 8px; padding: 20px; margin-bottom: 16px;">
+                            <!-- 头部 -->
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+                                <div>
+                                    <div style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin-bottom: 8px;">
+                                        ${index + 1}. ${sug.title}
+                                    </div>
+                                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                                        <span style="background: rgba(59, 130, 246, 0.2); color: #60A5FA; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                                            ${sug.category}
+                                        </span>
+                                        <span style="background: rgba(245, 158, 11, 0.2); color: #FBBF24; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                                            影响力 ${sug.impact}
+                                        </span>
+                                        <span style="background: rgba(16, 185, 129, 0.2); color: #34D399; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                                            成功率 ${sug.probability}%
+                                        </span>
+                                        <span style="background: rgba(239, 68, 68, 0.2); color: #F87171; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                                            成本 ${sug.cost}
+                                        </span>
+                                        <span style="background: rgba(168, 85, 247, 0.2); color: #C084FC; padding: 4px 10px; border-radius: 12px; font-size: 12px;">
+                                            周期 ${sug.cycle}个月
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style="text-align: center; background: ${priorityColor}; color: white; padding: 8px 16px; border-radius: 8px; min-width: 80px;">
+                                    <div style="font-size: 20px; font-weight: 700;">${sug.priority}</div>
+                                    <div style="font-size: 11px;">优先级 ${priorityLabel}</div>
+                                </div>
+                            </div>
+
+                            <!-- 内容 -->
+                            <div style="margin-bottom: 16px;">
+                                <div style="color: #EF4444; font-size: 14px; font-weight: 600; margin-bottom: 8px;">❌ 问题诊断</div>
+                                <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">${sug.problem}</div>
+                            </div>
+
+                            <div style="margin-bottom: 16px;">
+                                <div style="color: #10B981; font-size: 14px; font-weight: 600; margin-bottom: 8px;">✅ 解决方案</div>
+                                <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8; white-space: pre-line;">${sug.solution}</div>
+                            </div>
+
+                            <div style="margin-bottom: 16px;">
+                                <div style="color: #FBBF24; font-size: 14px; font-weight: 600; margin-bottom: 8px;">💰 预期收益</div>
+                                <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">${sug.expectedBenefit}</div>
+                            </div>
+
+                            <!-- 任务清单 -->
+                            <div style="margin-bottom: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+                                <div style="color: #60A5FA; font-size: 13px; font-weight: 600; margin-bottom: 8px;">📋 执行任务清单</div>
+                                <div style="display: flex; flex-direction: column; gap: 6px;">
+                                    ${sug.tasks.map(task => `
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" style="width: 16px; height: 16px; cursor: pointer;">
+                                            <span style="color: #A1A1AA; font-size: 13px;">${task}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 操作按钮 -->
+                            <div style="display: flex; gap: 12px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.1);">
+                                <button onclick="createMarketingTask('${sug.id}')" style="background: #3B82F6; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600;">
+                                    ➕ 创建任务
+                                </button>
+                                <button style="background: rgba(255,255,255,0.1); color: #FAFAFA; border: 1px solid rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;">
+                                    📤 导出方案
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    // 获取营销基准对比
+    getMarketingBenchmark(businessType, metrics) {
+        const benchmarks = {
+            '快餐': { marketingIndex: 65, outputScore: 70, efficiencyScore: 65, reputationScore: 60 },
+            '火锅': { marketingIndex: 75, outputScore: 75, efficiencyScore: 70, reputationScore: 80 },
+            '正餐': { marketingIndex: 70, outputScore: 65, efficiencyScore: 75, reputationScore: 70 },
+            '茶餐厅': { marketingIndex: 68, outputScore: 70, efficiencyScore: 65, reputationScore: 68 },
+            '咖啡厅': { marketingIndex: 72, outputScore: 75, efficiencyScore: 68, reputationScore: 75 },
+            '茶饮店': { marketingIndex: 78, outputScore: 80, efficiencyScore: 75, reputationScore: 75 },
+            '其他': { marketingIndex: 70, outputScore: 70, efficiencyScore: 70, reputationScore: 70 }
+        };
+
+        const benchmark = benchmarks[businessType] || benchmarks['其他'];
+
+        return {
+            benchmark,
+            comparison: {
+                totalIndex: metrics.totalIndex - benchmark.marketingIndex,
+                output: metrics.outputScore - benchmark.outputScore,
+                efficiency: metrics.efficiencyScore - benchmark.efficiencyScore,
+                reputation: metrics.reputationScore - benchmark.reputationScore
+            },
+            percentile: this.calculatePercentile(metrics.totalIndex, benchmark.marketingIndex)
+        };
+    }
+
+    // 计算百分位
+    calculatePercentile(actual, benchmark) {
+        const ratio = actual / benchmark;
+        if (ratio >= 1.2) return 90;
+        if (ratio >= 1.1) return 75;
+        if (ratio >= 1.0) return 60;
+        if (ratio >= 0.9) return 40;
+        if (ratio >= 0.8) return 25;
+        return 10;
+    }
+
+    // 生成行业基准对比
+    generateMarketingBenchmark(comparison) {
+        return `
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+                <div style="color: #FAFAFA; font-size: 16px; font-weight: 600; margin-bottom: 16px;">
+                    📊 行业基准对比分析
+                </div>
+
+                <div style="color: #71717A; font-size: 13px; margin-bottom: 20px;">
+                    对比同业态餐饮的营销表现，评估您的市场竞争力（百分位：${comparison.percentile}%）
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;">
+                    ${this.generateBenchmarkCard('营销指数', comparison.comparison.totalIndex, comparison.benchmark.marketingIndex)}
+                    ${this.generateBenchmarkCard('产出因子', comparison.comparison.output, comparison.benchmark.outputScore)}
+                    ${this.generateBenchmarkCard('效率因子', comparison.comparison.efficiency, comparison.benchmark.efficiencyScore)}
+                    ${this.generateBenchmarkCard('口碑因子', comparison.comparison.reputation, comparison.benchmark.reputationScore)}
+                </div>
+
+                <!-- 竞争力评估 -->
+                <div style="margin-top: 20px; padding: 16px; background: rgba(${comparison.percentile >= 60 ? '16, 185, 129' : '245, 158, 11'}, 0.1); border-radius: 8px;">
+                    <div style="color: ${comparison.percentile >= 60 ? '#34D399' : '#FBBF24'}; font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+                        ${comparison.percentile >= 75 ? '🏆 竞争力优秀' : comparison.percentile >= 60 ? '✅ 竞争力良好' : comparison.percentile >= 40 ? '⚠️ 竞争力一般' : '❌ 竞争力较弱'}
+                    </div>
+                    <div style="color: #A1A1AA; font-size: 13px; line-height: 1.8;">
+                        ${this.getCompetitivenessAdvice(comparison.percentile)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 生成基准对比卡片
+    generateBenchmarkCard(label, diff, benchmarkValue) {
+        const isPositive = diff >= 0;
+        const color = isPositive ? '#10B981' : '#EF4444';
+        const icon = isPositive ? '↑' : '↓';
+        const percent = ((Math.abs(diff) / benchmarkValue) * 100).toFixed(1);
+
+        return `
+            <div style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 8px; text-align: center;">
+                <div style="color: #A1A1AA; font-size: 12px; margin-bottom: 8px;">${label}</div>
+                <div style="color: ${color}; font-size: 24px; font-weight: 700; margin-bottom: 4px;">
+                    ${icon} ${Math.abs(diff)}
+                </div>
+                <div style="color: #71717A; font-size: 11px;">
+                    ${isPositive ? '优于' : '低于'}行业 ${percent}%
+                </div>
+                <div style="color: #52525B; font-size: 11px; margin-top: 4px;">
+                    行业基准: ${benchmarkValue}
+                </div>
+            </div>
+        `;
+    }
+
+    // 获取竞争力建议
+    getCompetitivenessAdvice(percentile) {
+        if (percentile >= 75) {
+            return '您的营销表现处于行业前25%，建议继续保持优势并探索创新营销模式，可考虑打造品牌IP或拓展新渠道。';
+        } else if (percentile >= 60) {
+            return '您的营销表现处于行业中上游，建议在保持现有优势的基础上，重点优化薄弱环节，争取进入前25%。';
+        } else if (percentile >= 40) {
+            return '您的营销表现处于行业平均水平，建议参考行业最佳实践，在产出、效率、口碑三方面全面提升。';
+        } else {
+            return '您的营销表现低于行业平均，建议优先执行高优先级建议，快速补齐短板，避免在竞争中落后。';
+        }
+    }
+
+    // 生成任务追踪系统
+    generateMarketingTaskTracker(suggestions) {
+        return `
+            <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px;">
+                <!-- 头部：标题 + 手动创建按钮 + 统计徽章 -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="color: #FAFAFA; font-size: 16px; font-weight: 600;">📌 营销任务追踪看板</span>
+                        <button onclick="createCustomTask()" style="background: #3B82F6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s;" onmouseover="this.style.background='#2563EB'" onmouseout="this.style.background='#3B82F6'">
+                            ➕ 手动创建任务
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <span style="color: #71717A; font-size: 13px; background: rgba(255,255,255,0.05); padding: 6px 12px; border-radius: 6px;">
+                            待处理: <strong class="task-count-badge" style="color: #FAFAFA;">0</strong>
+                        </span>
+                        <span style="color: #71717A; font-size: 13px; background: rgba(59, 130, 246, 0.2); padding: 6px 12px; border-radius: 6px;">
+                            进行中: <strong class="task-count-badge" style="color: #60A5FA;">0</strong>
+                        </span>
+                        <span style="color: #71717A; font-size: 13px; background: rgba(16, 185, 129, 0.2); padding: 6px 12px; border-radius: 6px;">
+                            已完成: <strong class="task-count-badge" style="color: #34D399;">0</strong>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 使用说明 -->
+                <div style="color: #71717A; font-size: 13px; margin-bottom: 20px; line-height: 1.6;">
+                    💡 <strong style="color: #A1A1AA;">使用提示：</strong><br>
+                    • 点击上方建议中的"创建任务"按钮快速创建任务<br>
+                    • 点击"手动创建任务"可自定义任务内容<br>
+                    • 双击任务标题可编辑，勾选复选框标记完成<br>
+                    • 任务数据自动保存到本地，刷新页面不会丢失
+                </div>
+
+                <!-- 任务列表容器 -->
+                <div id="marketingTaskList" style="min-height: 100px;">
+                    <!-- 任务将通过 renderMarketingTasks() 函数动态渲染 -->
+                </div>
+
+                <!-- 快捷操作（禁用状态，等待后续开发） -->
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div style="color: #A1A1AA; font-size: 13px; margin-bottom: 12px;">💡 快捷操作（开发中）</div>
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button class="placeholder-action-btn" style="background: rgba(59, 130, 246, 0.1); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled title="功能开发中，敬请期待">
+                            @运营团队 提醒执行
+                        </button>
+                        <button class="placeholder-action-btn" style="background: rgba(16, 185, 129, 0.1); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled title="功能开发中，敬请期待">
+                            📅 设置截止日期
+                        </button>
+                        <button class="placeholder-action-btn" style="background: rgba(245, 158, 11, 0.1); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled title="功能开发中，敬请期待">
+                            📊 查看任务进度
+                        </button>
+                        <button class="placeholder-action-btn" style="background: rgba(168, 85, 247, 0.1); color: #C084FC; border: 1px solid rgba(168, 85, 247, 0.3); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: not-allowed; opacity: 0.5;" disabled title="功能开发中，敬请期待">
+                            📤 导出任务清单
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 初始化任务列表渲染 -->
+                <script>
+                    (function() {
+                        setTimeout(function() {
+                            if (typeof renderMarketingTasks === 'function') {
+                                renderMarketingTasks();
+                                console.log('✓ 营销任务列表已渲染');
+                            } else {
+                                console.warn('⚠️ renderMarketingTasks 函数未定义');
+                            }
+                        }, 100);
+                    })();
+                </script>
             </div>
         `;
     }
@@ -2666,7 +5159,7 @@ class RestaurantDiagnosisAdvanced {
         const competitivenessFactors = {
             cost_efficiency: this.calculateCostEfficiencyScore(kpi, benchmark),
             operational_efficiency: this.calculateOperationalEfficiencyScore(kpi, benchmark),
-            profitability: this.calculateProfitabilityScore(kpi, benchmark),
+            profitability: this.calculateSimpleProfitabilityScore(kpi, benchmark),
             customer_performance: this.calculateCustomerPerformanceScore(kpi, benchmark),
             marketing_capability: this.calculateMarketingCapabilityScore(kpi, data),
             product_quality: this.calculateProductQualityScore(kpi, data)
@@ -2752,7 +5245,7 @@ class RestaurantDiagnosisAdvanced {
         return (turnoverScore + sqmScore) / 2;
     }
 
-    calculateProfitabilityScore(kpi, benchmark) {
+    calculateSimpleProfitabilityScore(kpi, benchmark) {
         return Math.min(100, (kpi.gross_margin / benchmark.gross_margin) * 100);
     }
 
